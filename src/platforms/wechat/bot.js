@@ -3,6 +3,7 @@ import qrTerminal from 'qrcode-terminal'
 import { defaultMessage } from '../../wechaty/sendMessage.js'
 import { captureWechatMessage } from './messageStore.js'
 import { getWechatRuntimeConfig } from '../../config/env.js'
+import { DiagnosticWechat4u } from './loginDiagnostics.js'
 
 function onScan(qrcode, status) {
   if (status === ScanStatus.Waiting || status === ScanStatus.Timeout) {
@@ -10,7 +11,7 @@ function onScan(qrcode, status) {
     const qrcodeImageUrl = ['https://api.qrserver.com/v1/create-qr-code/?data=', encodeURIComponent(qrcode)].join('')
     console.log('onScan:', qrcodeImageUrl, ScanStatus[status], status)
   } else {
-    log.info('onScan: %s(%s)', ScanStatus[status], status)
+    log.info('WechatScan', '%s(%s)', ScanStatus[status], status)
   }
 }
 
@@ -37,13 +38,12 @@ export function createWechatBot(options = {}) {
   const chromeBin = process.env.CHROME_BIN ? { endpoint: process.env.CHROME_BIN } : {}
   const serviceType = options.serviceType || ''
 
+  const puppetOptions = { uos: true, ...chromeBin }
+  if (config.loginDebug) console.log('[wechat-login-debug] enabled; waiting for login events')
   const bot = WechatyBuilder.build({
     name: 'WechatEveryDay',
-    puppet: 'wechaty-puppet-wechat4u',
-    puppetOptions: {
-      uos: true,
-      ...chromeBin,
-    },
+    puppet: config.loginDebug ? new DiagnosticWechat4u(puppetOptions) : 'wechaty-puppet-wechat4u',
+    puppetOptions,
   })
 
   bot.on('scan', onScan)

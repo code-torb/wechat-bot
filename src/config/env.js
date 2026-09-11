@@ -22,6 +22,7 @@ function readCsvEnvOrDefault(key, fallback) {
 export function getWechatRuntimeConfig() {
   return {
     botName: env.BOT_NAME || '',
+    loginDebug: env.WECHAT_LOGIN_DEBUG === 'true',
     autoReplyPrefix: env.AUTO_REPLY_PREFIX || '',
     aliasWhiteList: readCsvEnv('ALIAS_WHITELIST'),
     roomWhiteList: readCsvEnv('ROOM_WHITELIST'),
