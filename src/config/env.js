@@ -21,6 +21,9 @@ function readCsvEnvOrDefault(key, fallback) {
 
 export function getWechatRuntimeConfig() {
   return {
+    transport: env.WECHAT_TRANSPORT || 'wechat4u',
+    puppetServiceToken: env.WECHATY_PUPPET_SERVICE_TOKEN || '',
+    puppetServiceEndpoint: env.WECHATY_PUPPET_SERVICE_ENDPOINT || '',
     botName: env.BOT_NAME || '',
     loginDebug: env.WECHAT_LOGIN_DEBUG === 'true',
     autoReplyPrefix: env.AUTO_REPLY_PREFIX || '',

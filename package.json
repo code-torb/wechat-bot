@@ -11,6 +11,10 @@
     "test": "node ./src/wechaty/testMessage.js",
     "test:analysis": "node ./src/analysis/__test__.js",
     "test:wechat-login": "node --test ./src/platforms/wechat/loginDiagnostics.test.js",
+    "test:wechat-transport": "node --test ./src/config/env.test.js ./src/platforms/wechat/puppetConfig.test.js",
+    "qq:agent": "node ./cli.js qq agent",
+    "qq:official": "node ./cli.js qq official",
+    "test:qq": "node --test ./src/chat/*.test.js ./src/platforms/qq/*.test.js ./src/platforms/onebot/*.test.js",
     "lark:login": "node ./cli.js lark login",
     "lark:agent": "node ./cli.js lark agent --agent pi",
     "telegram:agent": "node ./cli.js telegram agent --agent pi",
@@ -67,6 +71,7 @@
     "remark": "^14.0.2",
     "strip-markdown": "^5.0.0",
     "wechaty": "^1.20.2",
+    "wechaty-puppet-service": "1.19.9",
     "wechaty-puppet-wechat": "^1.18.4",
     "wechaty-puppet-wechat4u": "^1.14.14",
     "ws": "^8.16.0"

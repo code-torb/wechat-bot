@@ -3,7 +3,7 @@ import qrTerminal from 'qrcode-terminal'
 import { defaultMessage } from '../../wechaty/sendMessage.js'
 import { captureWechatMessage } from './messageStore.js'
 import { getWechatRuntimeConfig } from '../../config/env.js'
-import { DiagnosticWechat4u } from './loginDiagnostics.js'
+import { resolveWechatPuppetConfig } from './puppetConfig.js'
 
 function onScan(qrcode, status) {
   if (status === ScanStatus.Waiting || status === ScanStatus.Timeout) {
@@ -35,14 +35,14 @@ async function onFriendShip(friendship) {
 
 export function createWechatBot(options = {}) {
   const config = getWechatRuntimeConfig()
-  const chromeBin = process.env.CHROME_BIN ? { endpoint: process.env.CHROME_BIN } : {}
   const serviceType = options.serviceType || ''
-
-  const puppetOptions = { uos: true, ...chromeBin }
-  if (config.loginDebug) console.log('[wechat-login-debug] enabled; waiting for login events')
+  const { puppet, puppetOptions } = resolveWechatPuppetConfig(config)
+  if (config.transport === 'wechat4u' && config.loginDebug) {
+    console.log('[wechat-login-debug] enabled; waiting for login events')
+  }
   const bot = WechatyBuilder.build({
-    name: 'WechatEveryDay',
-    puppet: config.loginDebug ? new DiagnosticWechat4u(puppetOptions) : 'wechaty-puppet-wechat4u',
+    name: config.transport === 'service' ? 'WechatEveryDay-service' : 'WechatEveryDay',
+    puppet,
     puppetOptions,
   })
 

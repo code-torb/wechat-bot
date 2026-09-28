@@ -4,6 +4,8 @@
 
 一个基于 `Wechaty` 的微信 / IM agent 项目。
 
+**普通 QQ 号群聊机器人**：通过 NapCat / OneBot 登录 QQ 小号，支持 @触发、多轮对话、自定义模型与提示词。启动 `npm run qq:agent`，Linux / Docker 部署步骤见 [普通 QQ 号机器人指南](./docs/qq-personal-bot.zh-CN.md)。原官方接入保留为 `npm run qq:official`，两种接入共用独立聊天核心。
+
 它可以把微信扫码登录、飞书 IM 事件、Telegram Bot API 轮询或 WhatsApp Cloud API webhook 收到的消息交给 ChatGPT、DeepSeek、Ollama、Claude、Pi 等服务处理；也可以通过 OpenCLI 的 `wx-cli` 访问本机微信聊天、联系人、群成员、收藏、朋友圈缓存，并对群聊或某个好友做统计和分析。
 
 如果你希望把 Pi 作为本项目的 agent，用微信、飞书、Telegram 或 WhatsApp 作为外部通信渠道，直接看：[Pi Agent + IM 使用说明](./docs/pi-im-agent.zh-CN.md)。
@@ -27,7 +29,7 @@
 
 | 能力                           | 命令入口                                                             | 当前状态                               |
 | ------------------------------ | -------------------------------------------------------------------- | -------------------------------------- |
-| 微信扫码 IM                    | `wb agent --im wechat --agent pi` / `wb start --serve pi`            | 已接入，可扫码登录并回复白名单消息     |
+| 微信扫码 IM                    | `wb agent --im wechat --agent pi` / `wb start --serve pi`            | 可选原 Web 协议或第三方 Puppet Service |
 | Pi 作为项目 agent              | `wb agent --im wechat/lark/telegram/whatsapp --agent pi`             | 已接入，默认单轮非交互回复             |
 | 本地微信聊天 / 联系人 / 群成员 | `wb wx sessions`、`wb wx history`、`wb wx members`                   | 通过 OpenCLI `wx-cli` 接入             |
 | 本地朋友圈缓存                 | `wb wx sns-feed`、`wb wx sns-search`                                 | 通过 OpenCLI `wx-cli` 接入             |
@@ -76,6 +78,10 @@ wb agent --im wechat --agent pi
 - 非文本消息不会自动进入回复链路。
 
 > 注意：微信 Web 协议存在风控和封号风险。请只在你明确接受风险的账号和场景中使用，优先控制白名单和使用范围。
+
+### 改用第三方 Puppet Service
+
+若原 Web 协议扫码后在 `webwxinit` 返回 `Ret=1`，可以接入提供**个人微信 Wechaty Puppet Service** 的服务商。在 `.env` 中设置 `WECHAT_TRANSPORT='service'`、服务商提供的 `WECHATY_PUPPET_SERVICE_TOKEN`；服务商要求直连时再设置 `WECHATY_PUPPET_SERVICE_ENDPOINT`。AI 的 `--serve` 参数和原有白名单继续使用。完整的 Windows 本机启动与验收步骤见 [Puppet Service 接入指南](./docs/wechat-puppet-service.zh-CN.md)。
 
 <div align='center'>
   <a href="https://trendshift.io/repositories/11077" target="_blank"><img src="https://trendshift.io/api/badge/repositories/11077" alt="wangrongding%2Fwechat-bot | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>

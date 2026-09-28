@@ -175,7 +175,7 @@ function printAnalysisResult(result) {
   }
 }
 
-const program = new Command(name)
+const program = new Command(name).enablePositionalOptions()
 program.alias('we').description('一个基于 WeChaty 结合 AI 服务实现的微信机器人。').version(version, '-v, --version, -V')
 
 program.option('-s, --serve <type>', '跳过交互，直接设置启动的服务类型').action(async () => {
@@ -316,6 +316,22 @@ lark
   .option('--format <format>', 'json | pretty | table | ndjson | csv', 'pretty')
   .action(async (options) => {
     await larkSearchMessages(options)
+  })
+
+const qq = program.command('qq').description('QQ 群聊机器人：普通 QQ 号 NapCat / OneBot 或官方接入')
+
+qq.command('agent')
+  .description('启动普通 QQ 号 NapCat / OneBot 群聊机器人；通过 CHAT_* 配置模型与提示词')
+  .action(async () => {
+    const { startOneBotAgent } = await import('./platforms/onebot/agent.js')
+    await startOneBotAgent()
+  })
+
+qq.command('official')
+  .description('启动 QQ 官方 webhook；通过 CHAT_* 配置模型、多轮对话和提示词')
+  .action(async () => {
+    const { startQQAgent } = await import('./platforms/qq/agent.js')
+    await startQQAgent()
   })
 
 const telegram = program.command('telegram').description('Telegram Bot API 收发消息和 agent 通道')

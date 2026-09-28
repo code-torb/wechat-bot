@@ -1,0 +1,13 @@
+# Task: Independent chat core and OpenAI-compatible provider
+
+You own ONLY src/chat/core.js, src/chat/provider.js and their tests. Others are working in this repository; never revert their edits. Do not commit or modify other files. Use test-driven development, record RED/GREEN evidence in /tmp/qq-core-report.md. No credentials or network needed: local fake HTTP server tests.
+
+Node.js 20+, ESM, existing openai dependency. Never log prompts or keys. QQ integration will be implemented by parent.
+
+Export createChatCore({ complete, systemPrompt='你是一个友好、简洁的中文聊天助手。', maxTurns=10, sessionTtlMs=1800000, maxSessions=1000, cooldownMs=2000, maxConcurrent=4, maxInputChars=4000, maxReplyChars=1500, now=Date.now }). Return { handle(message): Promise<string|null> }.
+
+message = { platform, botId, groupId, userId, messageId, text }, all IDs nonempty strings. Session key must be collision-proof across platform/bot/group/user. Empty input -> help. /help -> usage. /reset -> clear only this session and return confirmation. Same-session busy must prevent reset racing a completion. Global concurrency returns short Chinese busy reply without calling provider. Per-session cooldown prevents costly repeated model calls but permits help/reset when no request active. Bound sessions including cooldown metadata by maxSessions and idle TTL; do not evict active sessions. History maxTurns complete pairs. Trim/clamp replies before storing to match delivered text. Failed requests return safe Chinese error, append no history and always release busy counters. Length over maxInputChars -> ask to shorten, no model call. Only send complete([{role:'system',content:systemPrompt},...history,{role:'user',content:text}]). No persistence, no tools, no QQ SDK imports.
+
+Export createChatProvider({ apiKey, baseURL, model, timeoutMs=45000, maxTokens=1000 }). Return async function complete(messages) -> nonempty string. Use OpenAI SDK chat.completions.create with model, messages, max_tokens; SDK maxRetries:0 and timeout; no logs. Validate required strings/base URL. Parent handles env/config; your modules must not read .env or process.env. No external actions.
+
+Test useful behavior: multi-turn messages sent to completion; different group/user/bot isolated; reset isolation; failure leaves history unchanged; concurrent same session including reset; global concurrency; cooldown with fake time; TTL and capacity including active entries; length limits and empty input; model fields/key path using local HTTP server; timeout and empty/invalid provider output. Report interfaces, test command/results, concerns. Do not overbuild.

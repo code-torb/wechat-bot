@@ -4,6 +4,8 @@ English | [Simplified Chinese](./README.zh-CN.md)
 
 A WeChat / IM agent project based on `Wechaty`.
 
+**Personal QQ group bot:** log in a regular QQ account through NapCat / OneBot for mention-triggered, multi-turn chat with a configurable model and system prompt. Run `npm run qq:agent`; see the [Linux / Docker setup guide (Chinese)](./docs/qq-personal-bot.zh-CN.md). Official QQ remains available through `npm run qq:official`, sharing the same independent chat core.
+
 It can route IM messages received from WeChat QR-code login, Lark IM events, Telegram Bot API polling, or WhatsApp Cloud API webhooks to ChatGPT, DeepSeek, Ollama, Claude, Pi, and other services. It can also use OpenCLI `wx-cli` to access local WeChat chats, contacts, group members, favorites, and Moments cache, then run statistics or AI analysis for a group chat or a specific friend.
 
 If you want to use Pi as the project agent and WeChat, Lark, Telegram, or WhatsApp as the external communication channel, start with [Pi Agent + IM Guide](./docs/pi-im-agent.md).
@@ -27,7 +29,7 @@ If you want to use Pi as the project agent and WeChat, Lark, Telegram, or WhatsA
 
 | Feature | Command entry | Status |
 | --- | --- | --- |
-| WeChat QR-code IM | `wb agent --im wechat --agent pi` / `wb start --serve pi` | Available. Logs in by QR code and replies to allowlisted messages |
+| WeChat QR-code IM | `wb agent --im wechat --agent pi` / `wb start --serve pi` | Supports the original Web protocol or a third-party Puppet Service |
 | Pi as project agent | `wb agent --im wechat/lark/telegram/whatsapp --agent pi` | Available. Single-turn non-interactive replies by default |
 | Local WeChat chats / contacts / group members | `wb wx sessions`, `wb wx history`, `wb wx members` | Integrated through OpenCLI `wx-cli` |
 | Local Moments cache | `wb wx sns-feed`, `wb wx sns-search` | Integrated through OpenCLI `wx-cli` |
@@ -76,6 +78,10 @@ Trigger rules:
 - Non-text messages are not automatically sent to the reply pipeline.
 
 > Note: WeChat Web protocols carry account risk, including warnings or bans. Use this only with accounts and scenarios where you explicitly accept the risk. Keep allowlists and usage scope narrow.
+
+### Use a third-party Puppet Service
+
+If the original Web protocol fails after scanning with `webwxinit Ret=1`, you can use a provider that supports **personal WeChat through Wechaty Puppet Service**. Set `WECHAT_TRANSPORT='service'` and the provider's `WECHATY_PUPPET_SERVICE_TOKEN` in `.env`. Set `WECHATY_PUPPET_SERVICE_ENDPOINT` only if the provider requires a direct gRPC endpoint. The AI `--serve` setting and allowlists remain the same. See the [Puppet Service setup guide](./docs/wechat-puppet-service.zh-CN.md) for Windows setup and validation.
 
 <div align='center'>
   <a href="https://trendshift.io/repositories/11077" target="_blank"><img src="https://trendshift.io/api/badge/repositories/11077" alt="wangrongding%2Fwechat-bot | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>

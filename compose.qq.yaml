@@ -1,0 +1,55 @@
+services:
+  napcat:
+    image: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:latest}
+    restart: unless-stopped
+    environment:
+      NAPCAT_UID: '${NAPCAT_UID:-1000}'
+      NAPCAT_GID: '${NAPCAT_GID:-1000}'
+    ports:
+      # Use SSH port forwarding to access WebUI. OneBot is internal-only.
+      - '127.0.0.1:6099:6099'
+    expose:
+      - '3001'
+    volumes:
+      - napcat-qq:/app/.config/QQ
+      - napcat-config:/app/napcat/config
+
+  chatbot:
+    profiles: ['chatbot']
+    build:
+      context: .
+      dockerfile: Dockerfile.qq
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - napcat
+    stop_grace_period: 200s
+    volumes:
+      - ./prompts:/app/prompts:ro
+    environment:
+      # This hostname is on the Compose network, not the host loopback URL.
+      ONEBOT_WS_URL: ws://napcat:3001
+      ONEBOT_ACCESS_TOKEN: '${ONEBOT_ACCESS_TOKEN:-}'
+      ONEBOT_GROUP_ALLOWLIST: '${ONEBOT_GROUP_ALLOWLIST:-}'
+      ONEBOT_SELF_ID: '${ONEBOT_SELF_ID:-}'
+      ONEBOT_REQUEST_TIMEOUT_MS: '${ONEBOT_REQUEST_TIMEOUT_MS:-10000}'
+      ONEBOT_RECONNECT_MS: '${ONEBOT_RECONNECT_MS:-3000}'
+      ONEBOT_MAX_PENDING: '${ONEBOT_MAX_PENDING:-32}'
+      CHAT_API_KEY: '${CHAT_API_KEY:-${OPENAI_API_KEY:-}}'
+      CHAT_BASE_URL: '${CHAT_BASE_URL:-${OPENAI_PROXY_URL:-https://api.openai.com/v1}}'
+      CHAT_MODEL: '${CHAT_MODEL:-${OPENAI_MODEL:-}}'
+      CHAT_SYSTEM_PROMPT: '${CHAT_SYSTEM_PROMPT:-你是一个友好、简洁的中文聊天助手。请用纯文本回答。}'
+      CHAT_SYSTEM_PROMPT_FILE: '${CHAT_SYSTEM_PROMPT_FILE:-}'
+      CHAT_MAX_TURNS: '${CHAT_MAX_TURNS:-10}'
+      CHAT_SESSION_TTL_MS: '${CHAT_SESSION_TTL_MS:-1800000}'
+      CHAT_MAX_SESSIONS: '${CHAT_MAX_SESSIONS:-1000}'
+      CHAT_COOLDOWN_MS: '${CHAT_COOLDOWN_MS:-2000}'
+      CHAT_MAX_CONCURRENT: '${CHAT_MAX_CONCURRENT:-4}'
+      CHAT_MAX_INPUT_CHARS: '${CHAT_MAX_INPUT_CHARS:-4000}'
+      CHAT_MAX_REPLY_CHARS: '${CHAT_MAX_REPLY_CHARS:-1500}'
+      CHAT_TIMEOUT_MS: '${CHAT_TIMEOUT_MS:-45000}'
+      CHAT_MAX_TOKENS: '${CHAT_MAX_TOKENS:-1000}'
+
+volumes:
+  napcat-qq:
+  napcat-config:
