@@ -56,11 +56,101 @@ test('reply output is structured text and cannot inject CQ actions', () => {
   const params = groupReplyParams(normalize(event()), '[CQ:at,qq=all] hello')
   assert.deepEqual(params, {
     group_id: 34567,
+    message: [{ type: 'text', data: { text: '[CQ:at,qq=all] hello' } }],
+  })
+})
+
+test('group reply can explicitly retain the original message quote', () => {
+  const params = groupReplyParams(normalize(event()), '[CQ:at,qq=all] hello', true)
+  assert.deepEqual(params, {
+    group_id: 34567,
     message: [
       { type: 'reply', data: { id: '-123' } },
       { type: 'text', data: { text: '[CQ:at,qq=all] hello' } },
     ],
   })
+})
+
+const privateEvent = (overrides = {}) =>
+  event({
+    message_type: 'private',
+    sub_type: 'friend',
+    group_id: undefined,
+    message: [{ type: 'text', data: { text: '私聊' } }],
+    ...overrides,
+  })
+
+test('private chat is opt-in, friend-only, and requires a user allowlist', async () => {
+  const received = []
+  const options = {
+    groupAllowlist: ['34567'],
+    handleMessage: async (m) => {
+      received.push(m)
+      return 'hello'
+    },
+    sendReply: async () => {},
+  }
+  const disabled = createOneBotMessageHandler(options)
+  assert.equal(disabled.accept(privateEvent(), identity), false)
+  const noAllowlist = createOneBotMessageHandler({ ...options, privateEnabled: true })
+  assert.equal(noAllowlist.accept(privateEvent(), identity), false)
+  const handler = createOneBotMessageHandler({ ...options, privateEnabled: true, privateAllowlist: ['23456'] })
+  for (const override of [
+    { user_id: 34567 },
+    { user_id: 12345 },
+    { self_id: 54321 },
+    { sub_type: 'group' },
+    { sub_type: 'other' },
+    { sub_type: undefined },
+    { post_type: 'message_sent' },
+    { message_id: null },
+    { user_id: 0 },
+    { message: 'plain string' },
+    { anonymous: { id: 1 } },
+    { message: [{ type: 'image', data: { file: 'x' } }] },
+    { message: [{ type: 'at', data: { qq: '12345' } }] },
+  ])
+    assert.equal(handler.accept(privateEvent(override), identity), false, JSON.stringify(override))
+  assert.equal(handler.accept(privateEvent(), identity), true)
+  assert.equal(handler.accept(privateEvent(), identity), false)
+  await handler.drain()
+  assert.equal(received.length, 1)
+  assert.equal(received[0].text, '私聊')
+  assert.equal(received[0].messageType, 'private')
+  assert.equal(received[0].userId, '23456')
+})
+
+test('private dedup is isolated per user and from groups; quoted input needs no mention', async () => {
+  const received = []
+  const handler = createOneBotMessageHandler({
+    groupAllowlist: ['34567'],
+    privateEnabled: true,
+    privateAllowlist: ['23456', '34567'],
+    handleMessage: async (m) => {
+      received.push(m)
+      return 'hello'
+    },
+    sendReply: async () => {},
+  })
+  assert.equal(handler.accept(event(), identity), true)
+  assert.equal(handler.accept(privateEvent(), identity), true)
+  assert.equal(
+    handler.accept(
+      privateEvent({
+        user_id: 34567,
+        message: [
+          { type: 'reply', data: { id: '99' } },
+          { type: 'text', data: { text: '/help' } },
+        ],
+      }),
+      identity,
+    ),
+    true,
+  )
+  await handler.drain()
+  assert.equal(received.length, 3)
+  assert.equal(received[2].text, '/help')
+  assert.notEqual(received[0].groupId, received[1].groupId)
 })
 
 test('message handler deduplicates in-flight/delivered messages, bounds tasks, and closes admission', async () => {

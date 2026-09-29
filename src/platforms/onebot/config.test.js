@@ -12,6 +12,30 @@ test('personal QQ requires no official credentials and shares chat settings', ()
   assert.equal(c.provider.model, 'model')
   assert.equal(c.core.maxTurns, 10)
   assert.equal(c.client.expectedSelfId, '')
+  assert.equal(c.messages.privateEnabled, false)
+  assert.equal(c.messages.groupReplyQuote, false)
+  assert.deepEqual(c.messages.privateAllowlist, [])
+})
+
+test('private-only mode needs no groups and validates explicit switches and user IDs', () => {
+  const c = getOneBotConfig({
+    ...base,
+    ONEBOT_GROUP_ALLOWLIST: '',
+    ONEBOT_PRIVATE_ENABLED: 'true',
+    ONEBOT_PRIVATE_ALLOWLIST: '23456, 34567,23456',
+    ONEBOT_GROUP_REPLY_QUOTE: 'true',
+  })
+  assert.deepEqual(c.messages.groupAllowlist, [])
+  assert.deepEqual(c.messages.privateAllowlist, ['23456', '34567'])
+  assert.equal(c.messages.privateEnabled, true)
+  assert.equal(c.messages.groupReplyQuote, true)
+  assert.throws(() => getOneBotConfig({ ...base, ONEBOT_PRIVATE_ENABLED: 'true' }), /ONEBOT_PRIVATE_ALLOWLIST/)
+  for (const key of ['ONEBOT_PRIVATE_ENABLED', 'ONEBOT_GROUP_REPLY_QUOTE']) {
+    assert.throws(() => getOneBotConfig({ ...base, [key]: 'yes' }), new RegExp(key))
+  }
+  for (const value of ['all', '0', '9007199254740993', ', ,']) {
+    assert.throws(() => getOneBotConfig({ ...base, ONEBOT_PRIVATE_ALLOWLIST: value }), /ONEBOT_PRIVATE_ALLOWLIST/)
+  }
 })
 
 test('requires explicit token and group scope before connecting', () => {

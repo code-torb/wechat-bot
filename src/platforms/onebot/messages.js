@@ -25,18 +25,37 @@ export function normalizeGroupMessage(event, identity, groupAllowlist) {
   return mentioned ? { platform: 'qq-onebot', botId, groupId, userId, messageId, text: parts.join('').trim() } : null
 }
 
-export function groupReplyParams(message, text) {
+function normalizePrivateMessage(event, identity, allowed) {
+  if (!event || event.post_type !== 'message' || event.message_type !== 'private' || event.sub_type !== 'friend' || event.anonymous) return null
+  const botId = oneBotId(event.self_id),
+    userId = oneBotId(event.user_id),
+    messageId = oneBotId(event.message_id, true)
+  if (!botId || !userId || messageId === null || botId !== identity?.selfId || userId === botId) return null
+  if (!allowed.has(userId) || !Array.isArray(event.message)) return null
+  const parts = []
+  for (const segment of event.message) {
+    if (segment?.type === 'text' && typeof segment.data?.text === 'string') parts.push(segment.data.text)
+    else if (segment?.type !== 'reply') return null
+  }
+  // The shared core keys sessions by groupId + userId. This namespace cannot collide with a numeric QQ group ID.
+  return { platform: 'qq-onebot', botId, groupId: `private:${userId}`, userId, messageId, messageType: 'private', text: parts.join('').trim() }
+}
+
+export function groupReplyParams(message, text, quote = false) {
   return {
     group_id: Number(message.groupId),
-    message: [
-      { type: 'reply', data: { id: message.messageId } },
-      { type: 'text', data: { text } },
-    ],
+    message: [...(quote ? [{ type: 'reply', data: { id: message.messageId } }] : []), { type: 'text', data: { text } }],
   }
 }
 
+export function privateReplyParams(message, text) {
+  return { user_id: Number(message.userId), message: [{ type: 'text', data: { text } }] }
+}
+
 export function createOneBotMessageHandler({
-  groupAllowlist,
+  groupAllowlist = [],
+  privateEnabled = false,
+  privateAllowlist = [],
   handleMessage,
   sendReply,
   maxPending = 32,
@@ -46,13 +65,15 @@ export function createOneBotMessageHandler({
   onError = () => {},
 }) {
   const allowed = new Set(groupAllowlist),
+    privateAllowed = new Set(privateAllowlist),
     seen = new Map(),
     pending = new Set()
   let closing = false
   return {
     accept(event, identity) {
       if (closing) return false
-      const message = normalizeGroupMessage(event, identity, allowed)
+      const message =
+        normalizeGroupMessage(event, identity, allowed) || (privateEnabled ? normalizePrivateMessage(event, identity, privateAllowed) : null)
       if (!message) return false
       const key = JSON.stringify([message.botId, message.groupId, message.messageId])
       const old = seen.get(key)

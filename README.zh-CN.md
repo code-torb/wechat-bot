@@ -4,7 +4,7 @@
 
 一个基于 `Wechaty` 的微信 / IM agent 项目。
 
-**普通 QQ 号群聊机器人**：通过 NapCat / OneBot 登录 QQ 小号，支持 @触发、多轮对话、自定义模型与提示词。启动 `npm run qq:agent`，Linux / Docker 部署步骤见 [普通 QQ 号机器人指南](./docs/qq-personal-bot.zh-CN.md)。原官方接入保留为 `npm run qq:official`，两种接入共用独立聊天核心。
+**普通 QQ 号聊天机器人**：通过 NapCat / OneBot 登录 QQ 小号，支持群内 @触发、白名单好友私聊、多轮对话、自定义模型与提示词。群回复默认直接发送文字，可配置引用原消息。启动 `npm run qq:agent`，Linux / Docker 部署步骤见 [普通 QQ 号机器人指南](./docs/qq-personal-bot.zh-CN.md)。原官方接入保留为 `npm run qq:official`，两种接入共用独立聊天核心。
 
 它可以把微信扫码登录、飞书 IM 事件、Telegram Bot API 轮询或 WhatsApp Cloud API webhook 收到的消息交给 ChatGPT、DeepSeek、Ollama、Claude、Pi 等服务处理；也可以通过 OpenCLI 的 `wx-cli` 访问本机微信聊天、联系人、群成员、收藏、朋友圈缓存，并对群聊或某个好友做统计和分析。
 

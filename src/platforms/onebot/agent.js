@@ -3,7 +3,7 @@ import { createChatCore } from '../../chat/core.js'
 import { createChatProvider } from '../../chat/provider.js'
 import { createOneBotClient } from './client.js'
 import { getOneBotConfig } from './config.js'
-import { createOneBotMessageHandler, groupReplyParams } from './messages.js'
+import { createOneBotMessageHandler, groupReplyParams, privateReplyParams } from './messages.js'
 
 export async function startOneBotAgent({ config = getOneBotConfig(env), complete, logger = console, installSignalHandlers = true } = {}) {
   const core = createChatCore({ ...config.core, complete: complete || createChatProvider(config.provider) })
@@ -11,11 +11,21 @@ export async function startOneBotAgent({ config = getOneBotConfig(env), complete
   const handler = createOneBotMessageHandler({
     ...config.messages,
     handleMessage: (message) => core.handle(message),
-    sendReply: (message, text, origin) => client.call('send_group_msg', groupReplyParams(message, text), { generation: origin.generation }),
+    sendReply: (message, text, origin) => {
+      const privateChat = message.messageType === 'private'
+      return client.call(
+        privateChat ? 'send_private_msg' : 'send_group_msg',
+        privateChat ? privateReplyParams(message, text) : groupReplyParams(message, text, config.messages.groupReplyQuote),
+        { generation: origin.generation },
+      )
+    },
     onError: () => logger.error('QQ 回复未发送；连接可能已更换、已断开或 NapCat 拒绝发送。本条消息不会自动重发。'),
   })
   client.on('event', (event, identity) => handler.accept(event, identity))
-  client.on('ready', () => logger.log('已连接 NapCat 并确认 QQ 登录；白名单群内 @当前账号即可对话。'))
+  client.on('ready', () => {
+    logger.log('已连接 NapCat 并确认 QQ 登录；白名单群内 @当前账号即可对话。')
+    if (config.messages.privateEnabled) logger.log('已启用好友私聊；仅回复 ONEBOT_PRIVATE_ALLOWLIST 中的 QQ 号，无需 @。')
+  })
   client.on('disconnected', () => logger.log('NapCat 连接已断开，运行期间将自动重连。'))
   client.on('status', (type) => {
     if (type === 'login_failed') logger.error('无法确认 NapCat 登录账号，请完成扫码登录并检查 ONEBOT_SELF_ID。')

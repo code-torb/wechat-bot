@@ -1,8 +1,8 @@
-# 普通 QQ 号群聊机器人（Linux / Docker）
+# 普通 QQ 号聊天机器人（Linux / Docker）
 
-本方案使用 **普通 QQ 号登录 NapCat → OneBot v11 正向 WebSocket → 独立聊天核心 → 群内回复**。不需要申请官方机器人、AppID 或公网 HTTPS 回调。
+本方案使用 **普通 QQ 号登录 NapCat → OneBot v11 正向 WebSocket → 独立聊天核心 → 群聊或好友私聊回复**。不需要申请官方机器人、AppID 或公网 HTTPS 回调。
 
-已支持：群内真实 @机器人时回复、自定义模型与提示词、多轮聊天、`/reset`、`/help`、群白名单、冷却/并发限制、事件去重与断线重连。建议使用专用 QQ 小号；NapCat 属于第三方客户端接入，兼容性、登录稳定性和账号风控受 QQ 影响。
+已支持：群内真实 @机器人时回复、可选引用原消息、白名单好友私聊、自定义模型与提示词、多轮聊天、`/reset`、`/help`、群白名单、冷却/并发限制、事件去重与断线重连。建议使用专用 QQ 小号；NapCat 属于第三方客户端接入，兼容性、登录稳定性和账号风控受 QQ 影响。
 
 ## 一、准备文件和配置
 
@@ -23,8 +23,13 @@ openssl rand -hex 32
 ```dotenv
 # 与 NapCat WebSocket 服务端的 token 完全相同
 ONEBOT_ACCESS_TOKEN='刚刚生成的随机字符串'
-# 必填：数字 QQ 群号，可写多个。空值不会启动聊天服务。
+# 数字 QQ 群号，可写多个；留空禁用群聊，此时必须启用私聊并填写私聊白名单。
 ONEBOT_GROUP_ALLOWLIST='123456789,987654321'
+# 默认不引用原消息，直接发送回复文字
+ONEBOT_GROUP_REPLY_QUOTE='false'
+# 默认关闭私聊；开启时必须填写允许私聊的好友 QQ 号
+ONEBOT_PRIVATE_ENABLED='false'
+ONEBOT_PRIVATE_ALLOWLIST=''
 # 建议填写实际登录的 QQ 小号；留空则自动识别
 ONEBOT_SELF_ID='你的机器人QQ号'
 
@@ -89,6 +94,25 @@ docker compose -f compose.qq.yaml --profile chatbot logs -f chatbot
 
 机器人名字就是 QQ 昵称或群名片，在 QQ 中修改。**必须通过 QQ 的 @选择功能真正提及账号**，单纯输入文字 `@小助手`、@其他人、@全体成员不会触发。
 
+群回复默认直接发送文字，不引用原消息，也不自动 @发言人。需要恢复引用时设置 `ONEBOT_GROUP_REPLY_QUOTE='true'`。
+
+要同时启用好友私聊，在 `.env` 中设置：
+
+```dotenv
+ONEBOT_PRIVATE_ENABLED='true'
+# 填发消息的好友 QQ 号，不是机器人 QQ 号或群号；多个用英文逗号分隔
+ONEBOT_PRIVATE_ALLOWLIST='234567890,345678901'
+```
+
+先让白名单中的 QQ 号与机器人互为好友，然后直接私发文字、`/help` 或 `/reset`，无需 @。私聊始终直接回复文字，不附加引用。白名单外用户、非好友临时会话、自身消息不会触发；不会自动通过好友申请。开启私聊但未填写白名单时启动报错。只使用私聊时可以将 `ONEBOT_GROUP_ALLOWLIST` 留空。
+
+从旧版升级时，拉取新代码后必须重建聊天镜像，不能仅修改 `.env` 或重启旧容器：
+
+```sh
+git pull --ff-only
+docker compose -f compose.qq.yaml --profile chatbot up -d --build chatbot
+```
+
 `qq agent` / `npm run qq:agent` 现在默认使用普通 QQ。原官方版仍可通过 `qq official` / `npm run qq:official` 启动，见 [官方版指南](./qq-official-bot.zh-CN.md)。
 
 ## 四、自定义提示词和会话设置
@@ -103,26 +127,29 @@ Compose 将 `./prompts` 只读挂载到容器 `/app/prompts`，该相对路径�
 
 修改 `.env` 后重新执行 `docker compose -f compose.qq.yaml --profile chatbot up -d`，Compose 会更新环境变量。仅修改提示词文件时执行 `docker compose -f compose.qq.yaml --profile chatbot restart chatbot`。
 
-| 设置                        | 默认值  | 作用                                        |
-| --------------------------- | ------- | ------------------------------------------- |
-| `ONEBOT_SELF_ID`            | 空      | 自动识别登录 QQ；配置后只允许该账号连接成功 |
-| `ONEBOT_GROUP_ALLOWLIST`    | 必填    | 数字群号白名单，不是官方 group_openid       |
-| `ONEBOT_REQUEST_TIMEOUT_MS` | 10000   | OneBot API 调用/连接握手超时                |
-| `ONEBOT_RECONNECT_MS`       | 3000    | 初始重连间隔，连续失败逐渐增加到最多 30 秒  |
-| `ONEBOT_MAX_PENDING`        | 32      | 最大在途消息处理数；满载时忽略新事件        |
-| `CHAT_MAX_TURNS`            | 10      | 每个会话保留最近成功问答轮数                |
-| `CHAT_SESSION_TTL_MS`       | 1800000 | 会话闲置 30 分钟过期，后续请求时清理        |
-| `CHAT_MAX_SESSIONS`         | 1000    | 内存会话上限                                |
-| `CHAT_COOLDOWN_MS`          | 2000    | 同一会话的模型调用冷却时间                  |
-| `CHAT_MAX_CONCURRENT`       | 4       | 全局模型并发上限                            |
-| `CHAT_MAX_INPUT_CHARS`      | 4000    | 单条输入长度限制                            |
-| `CHAT_MAX_REPLY_CHARS`      | 1500    | 单条回复长度限制                            |
-| `CHAT_TIMEOUT_MS`           | 45000   | 模型请求超时，最大 120000                   |
-| `CHAT_MAX_TOKENS`           | 1000    | 传给模型的 `max_tokens`                     |
+| 设置                        | 默认值  | 作用                                                 |
+| --------------------------- | ------- | ---------------------------------------------------- |
+| `ONEBOT_SELF_ID`            | 空      | 自动识别登录 QQ；配置后只允许该账号连接成功          |
+| `ONEBOT_GROUP_ALLOWLIST`    | 空      | 数字群号白名单；空值禁用群聊，需配置私聊才能启动     |
+| `ONEBOT_GROUP_REPLY_QUOTE`  | false   | 群回复是否引用原消息；false 直接发文字               |
+| `ONEBOT_PRIVATE_ENABLED`    | false   | 开启好友私聊；必须同时配置私聊白名单                 |
+| `ONEBOT_PRIVATE_ALLOWLIST`  | 空      | 允许私聊的好友数字 QQ 号，逗号分隔；空值不放行任何人 |
+| `ONEBOT_REQUEST_TIMEOUT_MS` | 10000   | OneBot API 调用/连接握手超时                         |
+| `ONEBOT_RECONNECT_MS`       | 3000    | 初始重连间隔，连续失败逐渐增加到最多 30 秒           |
+| `ONEBOT_MAX_PENDING`        | 32      | 最大在途消息处理数；满载时忽略新事件                 |
+| `CHAT_MAX_TURNS`            | 10      | 每个会话保留最近成功问答轮数                         |
+| `CHAT_SESSION_TTL_MS`       | 1800000 | 会话闲置 30 分钟过期，后续请求时清理                 |
+| `CHAT_MAX_SESSIONS`         | 1000    | 内存会话上限                                         |
+| `CHAT_COOLDOWN_MS`          | 2000    | 同一会话的模型调用冷却时间                           |
+| `CHAT_MAX_CONCURRENT`       | 4       | 全局模型并发上限                                     |
+| `CHAT_MAX_INPUT_CHARS`      | 4000    | 单条输入长度限制                                     |
+| `CHAT_MAX_REPLY_CHARS`      | 1500    | 单条回复长度限制                                     |
+| `CHAT_TIMEOUT_MS`           | 45000   | 模型请求超时，最大 120000                            |
+| `CHAT_MAX_TOKENS`           | 1000    | 传给模型的 `max_tokens`                              |
 
-会话按「接入平台＋登录 QQ＋群号＋发言人 QQ」隔离，`/reset` 只清除当前用户在当前群的会话。回复仍然是群消息，群里其他人能看到。模型只接收触发问题及该会话历史，不接收整群普通聊天；机器人自己的发言不会再次触发。
+群会话按「接入平台＋登录 QQ＋群号＋发言人 QQ」隔离，`/reset` 只清除当前用户在当前群的会话。群回复仍然是群消息，群里其他人能看到。私聊按登录 QQ 和好友 QQ 隔离，同一人的私聊与群聊历史互不混用，私聊 `/reset` 不影响群聊。模型只接收触发问题及该会话历史，不接收整群普通聊天；机器人自己的发言不会再次触发。
 
-第一版处理纯文字和文字引用中的真实 @。图片、语音、转发、文件等媒体消息、匿名消息和私聊被忽略。模型输出始终作为文本发送，即使含 `[CQ:...]` 也不会被解析成 @全体成员或其他消息操作。
+处理群内纯文字和文字引用中的真实 @，以及开启后的白名单好友文字私聊。引用仅用于识别消息结构，不读取被引用消息的正文。图片、语音、转发、文件等媒体消息和匿名消息被忽略。模型输出始终作为文本发送，即使含 `[CQ:...]` 也不会被解析成 @全体成员或其他消息操作。
 
 ## 五、Linux 直接运行 Node.js（不使用机器人容器）
 
@@ -157,6 +184,7 @@ NapCat QQ 登录数据保存在 `napcat-qq` 卷，配置保存在 `napcat-config
 | 一直无法连接     | WS 服务端是否启用、端口 3001、Docker 中是否监听 0.0.0.0、token 是否一致            |
 | 提示无法确认登录 | 是否已扫码、QQ 是否掉线、`ONEBOT_SELF_ID` 是否与登录号一致                         |
 | @没有回复        | 数字群号是否在白名单、是否真实 @该账号、上报格式是否为 array、是否包含不支持的媒体 |
+| 私聊没有回复     | 是否启用私聊、发言人 QQ 是否在私聊白名单、是否为好友会话、是否已重建新版聊天镜像   |
 | 收到模型失败提示 | CHAT_API_KEY、CHAT_BASE_URL、模型名、接口参数兼容性、余额/超时                     |
 | 回复未发送       | QQ 禁言/风控、NapCat 返回失败、连接已换代；程序不会自动重发不确定的发送请求        |
 
@@ -166,7 +194,7 @@ NapCat QQ 登录数据保存在 `napcat-qq` 卷，配置保存在 `napcat-config
 npm run test:qq
 ```
 
-测试通过本机模拟 WS/HTTP 验证鉴权、登录识别、@过滤、引用文本回复、上下文与重置、超时及重连。**这不等于 QQ 账号登录或实际群聊验收完成。** 实际部署后还应测试：普通聊天不回复、白名单群 @回复、非白名单群不回复、追问和重置正确、重启 NapCat 后能恢复连接。
+测试通过本机模拟 WS/HTTP 验证鉴权、登录识别、@过滤、群回复引用开关、私聊白名单及回复路由、上下文隔离与重置、超时及重连。**这不等于 QQ 账号登录或实际聊天验收完成。** 实际部署后还应测试：普通群聊天不回复、白名单群 @回复、非白名单群不回复、开启后白名单好友私聊有回复且名单外无回复、追问和重置正确、重启 NapCat 后能恢复连接。
 
 会话与去重记录目前保存在单进程内存；重启聊天服务会清空。WS 断线或过载期间可能丢失消息，没有持久化消息队列。连接断开/换号后，旧连接产生的待回复会被丢弃；模型已经生成的答案可能留在上下文，可用 `/reset` 清除。服务关闭会等待在途任务结束；请保持单实例运行。
 

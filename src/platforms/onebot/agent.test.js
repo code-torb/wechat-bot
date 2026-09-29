@@ -19,10 +19,11 @@ const event = (id, text) => ({
   ],
 })
 
-async function fixture(t, complete) {
+async function fixture(t, complete, envOverrides = {}) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await once(server, 'listening')
   const sends = [],
+    actions = [],
     sockets = []
   let onSend
   server.on('connection', (socket) => {
@@ -30,7 +31,8 @@ async function fixture(t, complete) {
     socket.on('message', (raw) => {
       const call = JSON.parse(raw)
       if (call.action === 'get_login_info') socket.send(JSON.stringify({ status: 'ok', retcode: 0, data: { user_id: 12345 }, echo: call.echo }))
-      else if (call.action === 'send_group_msg') {
+      else if (call.action === 'send_group_msg' || call.action === 'send_private_msg') {
+        actions.push(call.action)
         sends.push(call.params)
         socket.send(JSON.stringify({ status: 'ok', retcode: 0, data: { message_id: 321 }, echo: call.echo }))
         onSend?.()
@@ -44,6 +46,7 @@ async function fixture(t, complete) {
     CHAT_API_KEY: 'test',
     CHAT_MODEL: 'test',
     CHAT_COOLDOWN_MS: '0',
+    ...envOverrides,
   })
   config.client.reconnectMs = 10
   const runtime = await startOneBotAgent({ config, complete, installSignalHandlers: false, logger: { log() {}, error() {} } })
@@ -56,6 +59,7 @@ async function fixture(t, complete) {
   return {
     ...runtime,
     sends,
+    actions,
     sockets,
     async sendAndWait(e) {
       const sent = new Promise((resolve) => {
@@ -83,8 +87,43 @@ test('full OneBot WS flow retains conversation and reset without official creden
     [2, 4, 2],
   )
   assert.equal(f.sends[0].group_id, 34567)
-  assert.equal(f.sends[0].message[1].type, 'text')
-  assert.equal(f.sends[0].message[1].data.text, 'answer [CQ:at,qq=all]')
+  assert.deepEqual(f.sends[0].message, [{ type: 'text', data: { text: 'answer [CQ:at,qq=all]' } }])
+})
+
+test('friend replies use private API, isolate histories and reset only the private conversation', { timeout: 5000 }, async (t) => {
+  const prompts = []
+  const f = await fixture(
+    t,
+    async (messages) => {
+      prompts.push(messages)
+      return 'answer [CQ:at,qq=all]'
+    },
+    { ONEBOT_PRIVATE_ENABLED: 'true', ONEBOT_PRIVATE_ALLOWLIST: '23456,45678', ONEBOT_GROUP_REPLY_QUOTE: 'true' },
+  )
+  const privateEvent = (id, text, userId = 23456) => ({
+    ...event(id, text),
+    message_type: 'private',
+    sub_type: 'friend',
+    group_id: undefined,
+    user_id: userId,
+    message: [{ type: 'text', data: { text } }],
+  })
+  await f.sendAndWait(event(1, 'group hello'))
+  await f.sendAndWait(privateEvent(1, 'private hello'))
+  await f.sendAndWait(privateEvent(1, 'another user', 45678))
+  await f.sendAndWait(privateEvent(2, 'continue'))
+  await f.sendAndWait(privateEvent(3, '/help'))
+  await f.sendAndWait(privateEvent(4, '/reset'))
+  await f.sendAndWait(privateEvent(5, 'new private chat'))
+  await f.sendAndWait(event(2, 'group continue'))
+  assert.deepEqual(
+    prompts.map((p) => p.length),
+    [2, 2, 2, 4, 2, 4],
+  )
+  assert.deepEqual(f.actions, ['send_group_msg', ...Array(6).fill('send_private_msg'), 'send_group_msg'])
+  assert.equal(f.sends[0].message[0].type, 'reply')
+  assert.deepEqual(f.sends[1], { user_id: 23456, message: [{ type: 'text', data: { text: 'answer [CQ:at,qq=all]' } }] })
+  assert.equal(f.sends[2].user_id, 45678)
 })
 
 test('delayed model answer is discarded after disconnect/reconnect instead of sending through a new login', { timeout: 5000 }, async (t) => {
