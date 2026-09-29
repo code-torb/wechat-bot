@@ -24,8 +24,10 @@ export function validateProviderBaseUrl(baseUrl) {
   } catch {
     throw new Error('provider base URL must be valid')
   }
-  if (parsed.protocol !== 'https:') throw new Error('provider base URL must use https')
   const policy = hostPolicy(parsed.hostname)
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && policy.reason === 'loopback')) {
+    throw new Error('provider base URL must use https (loopback http allowed for self-hosted)')
+  }
   if (policy.blocked) throw new Error(`provider base URL points to ${policy.reason} host`)
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('provider base URL must not contain credentials or query')
   return parsed.origin + parsed.pathname.replace(/\/+$/, '')

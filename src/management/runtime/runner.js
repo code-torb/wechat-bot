@@ -13,6 +13,7 @@ export function createAgentRuntime({
   complete,
   tools,
   getCredential,
+  getProvider,
   sessionQueue,
   logger = console,
 }) {
@@ -117,9 +118,10 @@ export function createAgentRuntime({
     let replyText = ''
     const assetIds = []
     const credentialRow = getCredential ? getCredential(agentVersion.model.credentialRef) : null
+    const providerRow = getProvider ? getProvider(agentVersion.model.providerId) : null
     for (let round = 0; round < 3; round += 1) {
       const result = await complete({
-        provider: { id: agentVersion.model.providerId, base_url: '', modelName: agentVersion.model.name },
+        provider: providerRow || { id: agentVersion.model.providerId, base_url: '', modelName: agentVersion.model.name },
         credentialRow,
         messages,
       })
