@@ -10,6 +10,9 @@ import { SessionStore } from '../../src/management/auth/sessions.js'
 import { SecretStore } from '../../src/management/secrets/store.js'
 import { createAgentService } from '../../src/management/agents/service.js'
 import { createAuditStore } from '../../src/management/audit/store.js'
+import { createStyleRepository } from '../../src/management/styles/repository.js'
+import { createQQRuleRepository } from '../../src/management/qq/rules.js'
+import { createQQRouter } from '../../src/management/qq/router.js'
 import { hashPassword } from '../../src/management/auth/passwords.js'
 
 const SESSION_COOKIE = 'mgmt_session'
@@ -47,8 +50,11 @@ async function build(t) {
   const sessions = new SessionStore({ db })
   const audit = createAuditStore(db)
   const service = createAgentService({ db, audit })
+  const styles = createStyleRepository(db)
+  const qqRules = createQQRuleRepository(db)
+  const qqRouter = createQQRouter({ db, service })
   const app = await createApp({ db, sessions, logger: false })
-  registerManagementRoutes(app, { db, sessions, secretStore, service, audit })
+  registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter })
   db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(await hashPassword('pw'), 'owner-1')
   return { app, db }
 }
@@ -123,4 +129,69 @@ test('mutations without csrf token are rejected', async (t) => {
     payload: { name: '助手' },
   })
   assert.equal(created.statusCode, 403)
+})
+
+test('style definition and agent pacing routes update drafts and publish snapshots', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
+  const definition = await app.inject({
+    method: 'POST',
+    url: '/api/v1/style-definitions',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { key: 'curiosity', name: '好奇程度', defaultValue: 0.5, lowText: '收尾', midText: '追问', highText: '探索' },
+  })
+  assert.equal(definition.statusCode, 201)
+  const defId = definition.json().data.id
+  const versionId = definition.json().data.currentVersion.id
+  const agent = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { name: '助手' },
+  })
+  const agentId = agent.json().data.id
+  const draft = {
+    name: '助手',
+    prompt: '你是一个测试助手。',
+    model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+  }
+  await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/agents/${agentId}`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { ...headers, 'if-match': '1' },
+    payload: draft,
+  })
+  const styles = await app.inject({
+    method: 'PUT',
+    url: `/api/v1/agents/${agentId}/style-settings`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { expectedRevision: 2, values: [{ definitionId: defId, definitionVersionId: versionId, value: 0.7 }] },
+  })
+  assert.equal(styles.statusCode, 200)
+  const pacing = await app.inject({
+    method: 'PUT',
+    url: `/api/v1/agents/${agentId}/reply-pacing`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { expectedRevision: 3, pacing: { baseDelayMs: 1500, charsPerSecond: 12, maxDelayMs: 12000 } },
+  })
+  assert.equal(pacing.statusCode, 200)
+  const published = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${agentId}/publish`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { expectedRevision: 4 },
+  })
+  assert.equal(published.statusCode, 200)
+  const snapshot = published.json().data
+  assert.equal(snapshot.styleValues[0].value, 0.7)
+  assert.equal(snapshot.styleValues[0].activationGeneration, 1)
+  assert.deepEqual(snapshot.pacing, { baseDelayMs: 1500, charsPerSecond: 12, maxDelayMs: 12000 })
 })
