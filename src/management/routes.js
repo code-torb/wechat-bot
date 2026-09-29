@@ -8,6 +8,7 @@ import { registerConversationRoutes } from './conversations/routes.js'
 import { registerPermissionRoutes } from './permissions/routes.js'
 import { registerCommandRoutes } from './commands/routes.js'
 import { registerProviderRoutes } from './providers/routes.js'
+import { registerMemeRoutes } from './tools/meme-routes.js'
 
 export function registerManagementRoutes(app, deps) {
   registerAuthRoutes(app, deps)
@@ -20,4 +21,5 @@ export function registerManagementRoutes(app, deps) {
   registerPermissionRoutes(app, deps)
   registerCommandRoutes(app, deps)
   registerProviderRoutes(app, deps)
+  registerMemeRoutes(app, deps)
 }

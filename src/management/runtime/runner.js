@@ -115,6 +115,7 @@ export function createAgentRuntime({
       { role: 'user', content: text },
     ]
     let replyText = ''
+    const assetIds = []
     const credentialRow = getCredential ? getCredential(agentVersion.model.credentialRef) : null
     for (let round = 0; round < 3; round += 1) {
       const result = await complete({
@@ -134,6 +135,9 @@ export function createAgentRuntime({
           runId,
           sceneMaxLevel: route.maxLevel,
         })
+        if (call.name === 'meme.select' && toolResult.status === 'ok' && toolResult.data?.assetId) {
+          assetIds.push(toolResult.data.assetId)
+        }
         messages.push({
           role: 'user',
           content: `工具 ${call.name} 结果：${toolResult.status === 'ok' ? JSON.stringify(toolResult.data) : toolResult.errorCode || toolResult.status}`,
@@ -144,7 +148,7 @@ export function createAgentRuntime({
       JSON.stringify({ agentVersionId: agentVersion.versionId }),
       runId,
     )
-    return { text: replyText, immediate: false, requiredCapabilities: ['chat'] }
+    return { text: replyText, immediate: false, assetIds, requiredCapabilities: ['chat'] }
   }
 
   return {
