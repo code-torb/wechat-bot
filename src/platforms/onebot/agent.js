@@ -4,14 +4,31 @@ import { createChatProvider } from '../../chat/provider.js'
 import { createOneBotClient } from './client.js'
 import { getOneBotConfig } from './config.js'
 import { createOneBotMessageHandler, groupReplyParams, privateReplyParams } from './messages.js'
+import { calculateReplyDelay } from '../../chat/pacing.js'
 
 export async function startOneBotAgent({ config = getOneBotConfig(env), complete, logger = console, installSignalHandlers = true } = {}) {
   const core = createChatCore({ ...config.core, complete: complete || createChatProvider(config.provider) })
   const client = createOneBotClient(config.client)
+  let stopping = null
+  const waiters = new Set()
   const handler = createOneBotMessageHandler({
     ...config.messages,
     handleMessage: (message) => core.handle(message),
-    sendReply: (message, text, origin) => {
+    sendReply: async (message, text, origin) => {
+      const delay = calculateReplyDelay(text, config.core.pacing)
+      if (delay > 0) {
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, delay)
+          const waiter = { timer, resolve }
+          waiters.add(waiter)
+          const cleanup = () => {
+            clearTimeout(timer)
+            waiters.delete(waiter)
+            resolve()
+          }
+          waiter.cleanup = cleanup
+        })
+      }
       const privateChat = message.messageType === 'private'
       return client.call(
         privateChat ? 'send_private_msg' : 'send_group_msg',
@@ -31,7 +48,6 @@ export async function startOneBotAgent({ config = getOneBotConfig(env), complete
     if (type === 'login_failed') logger.error('无法确认 NapCat 登录账号，请完成扫码登录并检查 ONEBOT_SELF_ID。')
     if (type === 'connection_error') logger.error('无法连接 NapCat，请检查正向 WebSocket 服务、地址和 ONEBOT_ACCESS_TOKEN。')
   })
-  let stopping
   const signalStop = () => {
     stop().catch(() => {
       logger.error('QQ 服务关闭失败')
@@ -41,6 +57,8 @@ export async function startOneBotAgent({ config = getOneBotConfig(env), complete
   function stop() {
     if (stopping) return stopping
     handler.close()
+    for (const waiter of waiters) waiter.cleanup()
+    waiters.clear()
     process.off('SIGINT', signalStop)
     process.off('SIGTERM', signalStop)
     stopping = handler

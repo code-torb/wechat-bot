@@ -141,6 +141,17 @@ export function createConversationStore(db) {
       })()
       return { deleted: true }
     },
+    markDelivered({ conversationId, runId, text }) {
+      const run = db.prepare('SELECT * FROM runs WHERE id = ? AND conversation_id = ?').get(runId, conversationId)
+      if (!run) return
+      db.transaction(() => {
+        db.prepare("UPDATE messages SET delivery_status = 'sent' WHERE run_id = ?").run(runId)
+        db.prepare(
+          'INSERT INTO messages (id, conversation_id, epoch, run_id, role, content_json, visibility, delivery_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ).run(randomUUID(), conversationId, run.epoch, runId, 'assistant', JSON.stringify({ text }), 'visible', 'sent', Date.now())
+        db.prepare("UPDATE runs SET status = 'sent', updated_at = ? WHERE id = ?").run(Date.now(), runId)
+      })()
+    },
     export(conversationId) {
       const rows = db
         .prepare(
