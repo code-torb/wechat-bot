@@ -12,6 +12,7 @@
     "test:analysis": "node ./src/analysis/__test__.js",
     "test:wechat-login": "node --test ./src/platforms/wechat/loginDiagnostics.test.js",
     "test:wechat-transport": "node --test ./src/config/env.test.js ./src/platforms/wechat/puppetConfig.test.js",
+    "test:management": "node --test 'src/management/**/*.test.js' 'tests/management/*.test.js'",
     "qq:agent": "node ./cli.js qq agent",
     "qq:official": "node ./cli.js qq official",
     "test:qq": "node --test ./src/chat/*.test.js ./src/platforms/qq/*.test.js ./src/platforms/onebot/*.test.js",
@@ -60,10 +61,12 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.6.8",
+    "better-sqlite3": "^12.11.1",
     "chatgpt": "^2.5.2",
     "commander": "^12.0.0",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
+    "fastify": "^5.12.5",
     "inquirer": "^9.2.16",
     "openai": "^4.52.0",
     "p-timeout": "^6.0.0",
@@ -82,5 +85,8 @@
     "prettier": "^3.3.3",
     "puppeteer": "13.5.1",
     "puppeteer-core": "13.5.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   }
 }
