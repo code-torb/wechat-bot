@@ -13,6 +13,8 @@
     "test:wechat-login": "node --test ./src/platforms/wechat/loginDiagnostics.test.js",
     "test:wechat-transport": "node --test ./src/config/env.test.js ./src/platforms/wechat/puppetConfig.test.js",
     "test:management": "node --test 'src/management/**/*.test.js' 'tests/management/*.test.js'",
+    "management:start": "node src/management/main.js",
+    "management:bootstrap": "node src/management/cli/bootstrap.js",
     "qq:agent": "node ./cli.js qq agent",
     "qq:official": "node ./cli.js qq official",
     "test:qq": "node --test ./src/chat/*.test.js ./src/platforms/qq/*.test.js ./src/platforms/onebot/*.test.js",
@@ -60,6 +62,8 @@
   "author": "荣顶",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "argon2": "^0.41.1",
     "axios": "^1.6.8",
     "better-sqlite3": "^12.11.1",
     "chatgpt": "^2.5.2",
@@ -87,6 +91,7 @@
     "puppeteer-core": "13.5.1"
   },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true
+    "better-sqlite3@12.11.1": true,
+    "argon2@0.41.1": true
   }
 }

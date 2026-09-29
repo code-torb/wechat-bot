@@ -1,7 +1,30 @@
 import Fastify from 'fastify'
+import cookie from '@fastify/cookie'
+import { SESSION_COOKIE } from './auth/routes.js'
+import { loadUser } from './auth/authorization.js'
 
-export async function createApp({ db, clock = Date.now, logger = true }) {
+export async function createApp({ db, clock = Date.now, sessions, logger = true }) {
   const app = Fastify({ logger })
+  await app.register(cookie)
+
+  app.decorateRequest('auth', null)
+  app.addHook('preHandler', async (request) => {
+    if (!sessions) return
+    const token = request.cookies?.[SESSION_COOKIE]
+    const session = token ? sessions.validate(token) : null
+    if (session) request.auth = { user: loadUser(db, session.user_id), session }
+  })
+
+  app.addHook('preHandler', async (request, reply) => {
+    if (!sessions || !request.auth?.user) return
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
+    if (!unsafe) return
+    const csrf = request.headers['x-csrf-token']
+    const sameOrigin = !request.headers.origin || new URL(request.headers.origin).host === request.hostname
+    if (!sameOrigin || !sessions.checkCsrf(request.auth.session, csrf)) {
+      return reply.code(403).send({ error: { code: 'CSRF_REJECTED', message: 'invalid csrf token or origin' } })
+    }
+  })
 
   app.addHook('onClose', async () => {
     if (db && typeof db.close === 'function') db.close()
@@ -15,6 +38,8 @@ export async function createApp({ db, clock = Date.now, logger = true }) {
       migrations: db?.prepare('SELECT MAX(version) AS version FROM migrations').get()?.version ?? null,
     },
   }))
+
+  app.decorate('db', db)
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'request failed')
