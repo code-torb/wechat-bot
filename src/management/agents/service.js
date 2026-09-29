@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { createAgentRepository, ConflictError, ValidationError } from './repository.js'
+import { validatePacing } from '../../chat/pacing.js'
 
 function defaultDraft() {
   return {
@@ -57,8 +58,33 @@ export function createAgentService({ db, audit }) {
     if (!provider) throw new ValidationError('model provider is missing or disabled')
   }
 
-  function versionSnapshot(agent) {
-    const draft = JSON.parse(agent.draft_json)
+  function validateStyleRefs(styleValues) {
+    if (styleValues.length > 20) throw new ValidationError('at most 20 style values are allowed per agent')
+    const enriched = []
+    for (const item of styleValues) {
+      const value = Number(item.value)
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw new ValidationError('style value must be between 0 and 1')
+      const row = db
+        .prepare(
+          `SELECT v.id AS version_id, v.definition_id, sd.enabled, sd.activation_generation
+           FROM style_definition_versions v
+           JOIN style_definitions sd ON sd.id = v.definition_id
+           WHERE v.id = ?`,
+        )
+        .get(item.definitionVersionId)
+      if (!row || row.definition_id !== item.definitionId) throw new ValidationError('style definition version is unknown or mismatched')
+      if (!row.enabled) throw new ValidationError('style definition is disabled')
+      enriched.push({
+        definitionId: row.definition_id,
+        definitionVersionId: row.version_id,
+        value,
+        activationGeneration: row.activation_generation,
+      })
+    }
+    return enriched
+  }
+
+  function versionSnapshot({ agent, draft }) {
     return JSON.stringify({
       id: agent.id,
       versionId: agent.published_version_id || '',
@@ -123,6 +149,40 @@ export function createAgentService({ db, audit }) {
       })
       return updated
     },
+    updateStyleSettings({ agentId, values, expectedRevision, actorId }) {
+      const current = repo.get(agentId)
+      if (!current) throw new ConflictError('agent not found')
+      const draft = normalizeDraft(JSON.parse(current.draft_json))
+      draft.styleValues = validateStyleRefs(values)
+      const updated = repo.updateDraft({ id: agentId, draftJson: JSON.stringify(draft), expectedRevision, now: Date.now() })
+      audit.record({
+        actorType: 'admin',
+        actorId: actorId || '',
+        action: 'agent.style_update',
+        resourceType: 'agents',
+        resourceId: agentId,
+        beforeRevision: expectedRevision,
+        afterRevision: updated.revision,
+      })
+      return updated
+    },
+    updatePacing({ agentId, pacing, expectedRevision, actorId }) {
+      const current = repo.get(agentId)
+      if (!current) throw new ConflictError('agent not found')
+      const draft = normalizeDraft(JSON.parse(current.draft_json))
+      draft.pacing = pacing === null ? null : validatePacing(pacing)
+      const updated = repo.updateDraft({ id: agentId, draftJson: JSON.stringify(draft), expectedRevision, now: Date.now() })
+      audit.record({
+        actorType: 'admin',
+        actorId: actorId || '',
+        action: 'agent.pacing_update',
+        resourceType: 'agents',
+        resourceId: agentId,
+        beforeRevision: expectedRevision,
+        afterRevision: updated.revision,
+      })
+      return updated
+    },
     publish({ agentId, expectedRevision, actorId }) {
       const agent = repo.get(agentId)
       if (!agent) throw new ConflictError('agent not found')
@@ -130,6 +190,8 @@ export function createAgentService({ db, audit }) {
       if (agent.status === 'archived') throw new ValidationError('archived agents cannot be published')
       const draft = normalizeDraft(JSON.parse(agent.draft_json))
       validateModelRefs(draft)
+      draft.styleValues = validateStyleRefs(draft.styleValues)
+      draft.pacing = draft.pacing === null ? null : validatePacing(draft.pacing)
       const now = Date.now()
       const versionNumber = repo.nextVersion(agentId)
       const versionId = randomUUID()
@@ -138,7 +200,7 @@ export function createAgentService({ db, audit }) {
           id: versionId,
           agentId,
           version: versionNumber,
-          snapshotJson: versionSnapshot({ ...agent, published_version_id: versionId }),
+          snapshotJson: versionSnapshot({ agent: { ...agent, published_version_id: versionId }, draft }),
           actorId,
           createdAt: now,
         })

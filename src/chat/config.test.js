@@ -19,6 +19,7 @@ test('CHAT config works without QQ credentials and preserves defaults', () => {
   })
   assert.deepEqual(config.core, {
     systemPrompt: '你是一个友好、简洁的中文聊天助手。请用纯文本回答，避免过长的回复。',
+    pacing: { baseDelayMs: 0, charsPerSecond: 0, maxDelayMs: 15000 },
     maxTurns: 10,
     sessionTtlMs: 1800000,
     maxSessions: 1000,
@@ -74,4 +75,18 @@ test('CHAT prompt file overrides inline prompt and validates file content', () =
   } finally {
     rmSync(dir, { recursive: true })
   }
+})
+
+test('CHAT reply pacing parses env with defaults and rejects invalid combinations', () => {
+  const config = getChatConfig(chatEnv)
+  assert.deepEqual(config.core.pacing, { baseDelayMs: 0, charsPerSecond: 0, maxDelayMs: 15000 })
+  const configured = getChatConfig({
+    ...chatEnv,
+    CHAT_REPLY_DELAY_MS: '1500',
+    CHAT_REPLY_CHARS_PER_SECOND: '12',
+    CHAT_REPLY_MAX_DELAY_MS: '12000',
+  })
+  assert.deepEqual(configured.core.pacing, { baseDelayMs: 1500, charsPerSecond: 12, maxDelayMs: 12000 })
+  assert.throws(() => getChatConfig({ ...chatEnv, CHAT_REPLY_DELAY_MS: '20000', CHAT_REPLY_MAX_DELAY_MS: '12000' }), /CHAT_REPLY_MAX_DELAY_MS/)
+  assert.throws(() => getChatConfig({ ...chatEnv, CHAT_REPLY_CHARS_PER_SECOND: '201' }), /CHAT_REPLY_CHARS_PER_SECOND/)
 })

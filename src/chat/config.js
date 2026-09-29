@@ -38,6 +38,14 @@ export function getChatConfig(env = {}) {
   const model = configValue(env, 'CHAT_MODEL', env.OPENAI_MODEL)
   const missing = [!apiKey && 'CHAT_API_KEY', !model && 'CHAT_MODEL'].filter(Boolean)
   if (missing.length) throw new Error(`请先配置 .env：${missing.join('、')}`)
+  const pacing = {
+    baseDelayMs: integerConfig(env, 'CHAT_REPLY_DELAY_MS', 0, 0, 60000),
+    charsPerSecond: integerConfig(env, 'CHAT_REPLY_CHARS_PER_SECOND', 0, 0, 200),
+    maxDelayMs: integerConfig(env, 'CHAT_REPLY_MAX_DELAY_MS', 15000, 0, 60000),
+  }
+  if (pacing.maxDelayMs < pacing.baseDelayMs) {
+    throw new Error('CHAT_REPLY_MAX_DELAY_MS 不能小于 CHAT_REPLY_DELAY_MS')
+  }
 
   let systemPrompt = configValue(env, 'CHAT_SYSTEM_PROMPT', DEFAULT_CHAT_SYSTEM_PROMPT)
   const promptFile = configValue(env, 'CHAT_SYSTEM_PROMPT_FILE')
@@ -61,6 +69,7 @@ export function getChatConfig(env = {}) {
     },
     core: {
       systemPrompt,
+      pacing,
       maxTurns: integerConfig(env, 'CHAT_MAX_TURNS', 10, 1, 50),
       sessionTtlMs: integerConfig(env, 'CHAT_SESSION_TTL_MS', 1800000, 1000, 86400000),
       maxSessions: integerConfig(env, 'CHAT_MAX_SESSIONS', 1000, 1, 10000),
