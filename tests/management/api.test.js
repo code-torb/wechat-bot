@@ -13,6 +13,7 @@ import { createAuditStore } from '../../src/management/audit/store.js'
 import { createStyleRepository } from '../../src/management/styles/repository.js'
 import { createQQRuleRepository } from '../../src/management/qq/rules.js'
 import { createQQRouter } from '../../src/management/qq/router.js'
+import { createConversationStore } from '../../src/management/conversations/repository.js'
 import { hashPassword } from '../../src/management/auth/passwords.js'
 
 const SESSION_COOKIE = 'mgmt_session'
@@ -53,8 +54,9 @@ async function build(t) {
   const styles = createStyleRepository(db)
   const qqRules = createQQRuleRepository(db)
   const qqRouter = createQQRouter({ db, service })
+  const conversations = createConversationStore(db)
   const app = await createApp({ db, sessions, logger: false })
-  registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter })
+  registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter, conversations })
   db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(await hashPassword('pw'), 'owner-1')
   return { app, db }
 }
