@@ -6,6 +6,8 @@
 
 **普通 QQ 号聊天机器人**：通过 NapCat / OneBot 登录 QQ 小号，支持群内 @触发、白名单好友私聊、多轮对话、自定义模型与提示词。群回复默认直接发送文字，可配置引用原消息。启动 `npm run qq:agent`，Linux / Docker 部署步骤见 [普通 QQ 号机器人指南](./docs/qq-personal-bot.zh-CN.md)。原官方接入保留为 `npm run qq:official`，两种接入共用独立聊天核心。
 
+**Agent 管理台**：浏览器管理多 Agent、Prompt 与模型凭据（AES-256-GCM 加密）、动态 0–1 对话设定、回复节奏、QQ 群/私聊白名单与绑定、命令模板、会话记录、分层权限、联网搜索、表情包与白名单文件操作。部署步骤见 [Agent 管理台部署指南](./docs/agent-management-deploy.zh-CN.md)。
+
 它可以把微信扫码登录、飞书 IM 事件、Telegram Bot API 轮询或 WhatsApp Cloud API webhook 收到的消息交给 ChatGPT、DeepSeek、Ollama、Claude、Pi 等服务处理；也可以通过 OpenCLI 的 `wx-cli` 访问本机微信聊天、联系人、群成员、收藏、朋友圈缓存，并对群聊或某个好友做统计和分析。
 
 如果你希望把 Pi 作为本项目的 agent，用微信、飞书、Telegram 或 WhatsApp 作为外部通信渠道，直接看：[Pi Agent + IM 使用说明](./docs/pi-im-agent.zh-CN.md)。

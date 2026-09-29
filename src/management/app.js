@@ -1,11 +1,23 @@
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
+import fastifyStatic from '@fastify/static'
+import { existsSync } from 'node:fs'
 import { SESSION_COOKIE } from './auth/routes.js'
 import { loadUser } from './auth/authorization.js'
 
 export async function createApp({ db, clock = Date.now, sessions, logger = true }) {
   const app = Fastify({ logger })
   await app.register(cookie)
+  const dist = process.env.MANAGEMENT_DIST
+  if (dist && existsSync(dist)) {
+    await app.register(fastifyStatic, { root: dist, wildcard: false })
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method !== 'GET' || request.url.startsWith('/api/')) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } })
+      }
+      return reply.sendFile('index.html')
+    })
+  }
 
   app.decorateRequest('auth', null)
   app.addHook('preHandler', async (request) => {

@@ -3,4 +3,4 @@ WORKDIR /app
 COPY . .
 RUN useradd --uid 10001 --system executor
 USER executor
-CMD ["python", "-m", "services.file_executor.main"]
+CMD ["python", "-m", "file_executor.main"]

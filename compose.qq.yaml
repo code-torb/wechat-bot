@@ -56,6 +56,59 @@ services:
       CHAT_REPLY_CHARS_PER_SECOND: '${CHAT_REPLY_CHARS_PER_SECOND:-0}'
       CHAT_REPLY_MAX_DELAY_MS: '${CHAT_REPLY_MAX_DELAY_MS:-15000}'
 
+  management:
+    profiles: ['management']
+    build:
+      context: .
+      dockerfile: Dockerfile.management
+    init: true
+    restart: unless-stopped
+    depends_on:
+      - napcat
+    ports:
+      - '127.0.0.1:6080:6080'
+    volumes:
+      - management-data:/app/data
+      - ./prompts:/app/prompts:ro
+    environment:
+      MANAGEMENT_HOST: 0.0.0.0
+      MANAGEMENT_PORT: '6080'
+      MANAGEMENT_DB: /app/data/management.sqlite
+      MANAGEMENT_KEY_FILE: /run/secrets/master_key
+      MANAGEMENT_MEME_DIR: /app/data/memes
+      MANAGEMENT_LEASE_DIR: /app/data/lease
+      ONEBOT_WS_URL: ws://napcat:3001
+      ONEBOT_ACCESS_TOKEN: '${ONEBOT_ACCESS_TOKEN:-}'
+      ONEBOT_SELF_ID: '${ONEBOT_SELF_ID:-}'
+      ONEBOT_BOT_ACCOUNT_ID: '${ONEBOT_BOT_ACCOUNT_ID:-imported-bot}'
+      FILE_EXECUTOR_SOCKET: /run/executor.sock
+      FILE_EXECUTOR_SECRET: '${FILE_EXECUTOR_SECRET:-}'
+    secrets:
+      - master_key
+
+  file-tools:
+    profiles: ['management']
+    build:
+      context: ./services/file_executor
+    restart: unless-stopped
+    network_mode: none
+    volumes:
+      - executor-socket:/run
+      - executor-journal:/var/lib/file-executor
+      - ./resources:/resources:rw
+    environment:
+      EXECUTOR_SOCKET: /run/executor.sock
+      EXECUTOR_SECRET: '${FILE_EXECUTOR_SECRET:-}'
+      EXECUTOR_JOURNAL: /var/lib/file-executor/journal.jsonl
+      RESOURCE_MANIFEST: '${RESOURCE_MANIFEST:-notes=/resources/notes}'
+
 volumes:
   napcat-qq:
   napcat-config:
+  management-data:
+  executor-socket:
+  executor-journal:
+
+secrets:
+  master_key:
+    file: ./secrets/master.key
