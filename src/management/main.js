@@ -5,6 +5,8 @@ import { SecretStore } from './secrets/store.js'
 import { createAgentService } from './agents/service.js'
 import { createAuditStore } from './audit/store.js'
 import { createStyleRepository } from './styles/repository.js'
+import { createQQRuleRepository } from './qq/rules.js'
+import { createQQRouter } from './qq/router.js'
 import { registerManagementRoutes } from './routes.js'
 
 const host = process.env.MANAGEMENT_HOST || '127.0.0.1'
@@ -19,8 +21,10 @@ const secretStore = process.env.MANAGEMENT_KEY_FILE
 const audit = createAuditStore(db)
 const service = createAgentService({ db, audit })
 const styles = createStyleRepository(db)
+const qqRules = createQQRuleRepository(db)
+const qqRouter = createQQRouter({ db, service })
 const app = await createApp({ db, sessions })
-registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles })
+registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter })
 
 await app.listen({ host, port })
 console.log(`agent management listening on http://${host}:${port}`)
