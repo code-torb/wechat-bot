@@ -90,7 +90,8 @@ test('full runtime flow sends a paced reply and stores the delivered turn', asyn
     commandRegistry: createCommandRegistry({ db }),
     policyEngine,
     scheduler,
-    complete: async () => '模型回复',
+    complete: async () => ({ text: '模型回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied', errorCode: 'UNKNOWN_TOOL' }) },
     sessionQueue: createSessionQueue(),
   })
   const result = await runtime.accept({
@@ -137,7 +138,8 @@ test('/reset cancels the pending reply and answers immediately', async (t) => {
     commandRegistry: createCommandRegistry({ db }),
     policyEngine,
     scheduler,
-    complete: async () => '慢回复',
+    complete: async () => ({ text: '慢回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied', errorCode: 'UNKNOWN_TOOL' }) },
     sessionQueue: createSessionQueue(),
   })
   await runtime.accept({

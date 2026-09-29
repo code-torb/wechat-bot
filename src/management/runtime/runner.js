@@ -11,6 +11,8 @@ export function createAgentRuntime({
   policyEngine,
   scheduler,
   complete,
+  tools,
+  getCredential,
   sessionQueue,
   logger = console,
 }) {
@@ -107,8 +109,37 @@ export function createAgentRuntime({
     }
 
     const system = buildSystem(agentVersion)
-    const contextMessages = conversations.getContext({ conversationId, epoch, maxTurns: 10 })
-    const replyText = await complete([{ role: 'system', content: system }, ...contextMessages, { role: 'user', content: text }])
+    let messages = [
+      { role: 'system', content: system },
+      ...conversations.getContext({ conversationId, epoch, maxTurns: 10 }),
+      { role: 'user', content: text },
+    ]
+    let replyText = ''
+    const credentialRow = getCredential ? getCredential(agentVersion.model.credentialRef) : null
+    for (let round = 0; round < 3; round += 1) {
+      const result = await complete({
+        provider: { id: agentVersion.model.providerId, base_url: '', modelName: agentVersion.model.name },
+        credentialRow,
+        messages,
+      })
+      if (!result.toolCalls?.length) {
+        replyText = result.text
+        break
+      }
+      for (const call of result.toolCalls) {
+        const toolResult = await tools.execute({
+          context: { botAccountId: message.botAccountId, scene: message.scene, peerId: message.peerId, senderId: message.senderId },
+          call,
+          agentVersion,
+          runId,
+          sceneMaxLevel: route.maxLevel,
+        })
+        messages.push({
+          role: 'user',
+          content: `工具 ${call.name} 结果：${toolResult.status === 'ok' ? JSON.stringify(toolResult.data) : toolResult.errorCode || toolResult.status}`,
+        })
+      }
+    }
     db.prepare("UPDATE runs SET status = 'waiting_send', effective_config_json = ? WHERE id = ?").run(
       JSON.stringify({ agentVersionId: agentVersion.versionId }),
       runId,
