@@ -183,6 +183,24 @@ export function createAgentService({ db, audit }) {
       })
       return updated
     },
+    updateCommands({ agentId, commandIds, expectedRevision, actorId }) {
+      const current = repo.get(agentId)
+      if (!current) throw new ConflictError('agent not found')
+      const draft = normalizeDraft(JSON.parse(current.draft_json))
+      if (!Array.isArray(commandIds)) throw new ValidationError('commandIds must be an array')
+      draft.commandRefs = [...new Set(commandIds)]
+      const updated = repo.updateDraft({ id: agentId, draftJson: JSON.stringify(draft), expectedRevision, now: Date.now() })
+      audit.record({
+        actorType: 'admin',
+        actorId: actorId || '',
+        action: 'agent.commands_update',
+        resourceType: 'agents',
+        resourceId: agentId,
+        beforeRevision: expectedRevision,
+        afterRevision: updated.revision,
+      })
+      return updated
+    },
     publish({ agentId, expectedRevision, actorId }) {
       const agent = repo.get(agentId)
       if (!agent) throw new ConflictError('agent not found')
