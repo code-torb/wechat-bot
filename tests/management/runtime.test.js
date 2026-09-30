@@ -808,3 +808,130 @@ test('retrieved knowledge entities expand the character graph', async (t) => {
   assert.match(system, /林安宁—周叙/)
   assert.match(system, /背景资料（最近动向）/)
 })
+
+test('idle messages start a new conversation automatically without a special reply', async (t) => {
+  const { db, router, conversations, agent } = fixture(t)
+  let tasks = []
+  let scheduled
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        scheduled = plan
+      },
+      cancelForConversation() {},
+    },
+    complete: async () => ({ text: '自动新会话的回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    idleConversationMs: 10000,
+    sessionQueue: {
+      enqueue(_key, task) {
+        tasks.push(task)
+        return { queued: true }
+      },
+    },
+  })
+  const first = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'idle-1',
+    text: '第一条',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await tasks[0]()
+  const firstRun = db.prepare('SELECT conversation_id FROM runs WHERE id = ?').get(first.runId)
+  const firstConversation = firstRun.conversation_id
+  db.prepare('UPDATE messages SET created_at = ? WHERE conversation_id = ?').run(Date.now() - 20000, firstConversation)
+  const second = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'idle-2',
+    text: '第二条',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await tasks[1]()
+  const secondRun = db.prepare('SELECT conversation_id FROM runs WHERE id = ?').get(second.runId)
+  assert.notEqual(secondRun.conversation_id, firstConversation)
+  assert.equal(db.prepare('SELECT active FROM conversations WHERE id = ?').get(firstConversation).active, 0)
+  const fresh = db.prepare('SELECT active FROM conversations WHERE id = ?').get(secondRun.conversation_id)
+  assert.equal(fresh.active, 1)
+  const firstTexts = db.prepare('SELECT content_json FROM messages WHERE conversation_id = ? AND role = ?').all(firstConversation, 'user')
+  const secondTexts = db.prepare('SELECT content_json FROM messages WHERE conversation_id = ? AND role = ?').all(secondRun.conversation_id, 'user')
+  assert.deepEqual(
+    firstTexts.map((row) => JSON.parse(row.content_json).text),
+    ['第一条'],
+  )
+  assert.deepEqual(
+    secondTexts.map((row) => JSON.parse(row.content_json).text),
+    ['第二条'],
+  )
+  assert.equal(scheduled.reply.text, '自动新会话的回复')
+})
+
+test('recent messages reuse the active conversation', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let tasks = []
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule() {},
+      cancelForConversation() {},
+    },
+    complete: async () => ({ text: '回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    idleConversationMs: 60000,
+    sessionQueue: {
+      enqueue(_key, task) {
+        tasks.push(task)
+        return { queued: true }
+      },
+    },
+  })
+  const first = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'recent-1',
+    text: '第一条',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await tasks[0]()
+  const second = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'recent-2',
+    text: '第二条',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await tasks[1]()
+  const firstRun = db.prepare('SELECT conversation_id FROM runs WHERE id = ?').get(first.runId)
+  const secondRun = db.prepare('SELECT conversation_id FROM runs WHERE id = ?').get(second.runId)
+  assert.equal(firstRun.conversation_id, secondRun.conversation_id)
+})

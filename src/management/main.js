@@ -138,6 +138,7 @@ if (process.env.ONEBOT_ACCESS_TOKEN && modelClient && secretStore) {
     refreshStaleRelations: ({ agentId }) => profileService.refreshStaleRelations({ agentId }),
     refreshAllRelations: ({ agentId }) => profileService.refreshAllRelations({ agentId }),
     knowledge,
+    idleConversationMs: Number(process.env.SESSION_IDLE_MS || 30 * 60 * 1000),
     sessionQueue: createSessionQueue(),
   })
   client.on('ready', ({ selfId }) => ensureBotAccount(selfId))

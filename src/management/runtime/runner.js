@@ -18,6 +18,7 @@ export function createAgentRuntime({
   refreshStaleRelations,
   refreshAllRelations,
   knowledge,
+  idleConversationMs = 30 * 60 * 1000,
   logger = console,
 }) {
   function matchingNodeIds(agentVersion, texts) {
@@ -324,6 +325,23 @@ export function createAgentRuntime({
     async accept(message) {
       const route = router.resolve(message)
       if (!route.accepted) return { status: 'ignored', reason: route.reason }
+      if (idleConversationMs > 0) {
+        const active = db
+          .prepare(
+            'SELECT id FROM conversations WHERE bot_account_id = ? AND scene = ? AND peer_id = ? AND sender_id = ? AND agent_id = ? AND active = 1 LIMIT 1',
+          )
+          .get(message.botAccountId, message.scene, message.peerId, message.senderId, route.agentId)
+        if (active) {
+          const lastAt = db.prepare('SELECT MAX(created_at) AS at FROM messages WHERE conversation_id = ?').get(active.id).at
+          if (lastAt !== null && Date.now() - lastAt >= idleConversationMs) {
+            conversations.closeAndStart({
+              conversationId: active.id,
+              message,
+              agentId: route.agentId,
+            })
+          }
+        }
+      }
       const accepted = conversations.accept({
         message,
         agentId: route.agentId,
