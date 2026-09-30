@@ -72,10 +72,13 @@ docker compose -f compose.qq.yaml --profile management up -d --no-build manageme
 首次启动后创建管理员并导入旧配置：
 
 ```sh
-docker compose -f compose.qq.yaml --profile management exec management node src/management/cli/bootstrap.js
-docker compose -f compose.qq.yaml --profile management exec management node src/management/cli/import-env.js .env --dry-run
-docker compose -f compose.qq.yaml --profile management exec management node src/management/cli/import-env.js .env
+docker compose -f compose.qq.yaml --profile management exec management node --input-type=module -e \
+  "import { bootstrapOwner } from './src/management/cli/bootstrap.js'; await bootstrapOwner({ databaseFile: process.env.MANAGEMENT_DB })"
+docker compose -f compose.qq.yaml --profile management exec -T management node src/management/cli/import-env.js /dev/stdin --dry-run < .env
+docker compose -f compose.qq.yaml --profile management exec -T management node src/management/cli/import-env.js /dev/stdin < .env
 ```
+
+第一个命令会交互询问管理员用户名和密码；已有 owner 时不必重复执行。导入命令从宿主机标准输入读取 `.env`，不要求把文件挂载到容器。导入前确认 `.env` 中设置了 `ONEBOT_SELF_ID`（机器人自己的 QQ 号）、`CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_MODEL` 和需要的白名单；没有 `ONEBOT_SELF_ID` 时，不会创建 QQ 账号与白名单规则。
 
 导入会建立“默认 Agent”、加密保存 API Key、把群/私聊白名单与触发规则写入数据库，并预置 7 项对话设定。用户默认都是 L0，不会因导入获得搜索或文件权限。
 
