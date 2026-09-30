@@ -25,6 +25,15 @@ export function cosine(a, b) {
 }
 
 export function createKnowledgeIndexer({ db, embedding }) {
+  async function embedInBatches(texts, batchSize = 64) {
+    const vectors = []
+    for (let start = 0; start < texts.length; start += batchSize) {
+      const batch = await embedding.embed(texts.slice(start, start + batchSize))
+      vectors.push(...batch)
+    }
+    return vectors
+  }
+
   return {
     async indexDocument({ agentId, docId, title, content }) {
       const chunks = chunkText(content)
@@ -32,7 +41,7 @@ export function createKnowledgeIndexer({ db, embedding }) {
       let vectors = null
       if (embedding) {
         try {
-          vectors = await embedding.embed(chunks)
+          vectors = await embedInBatches(chunks)
         } catch {
           vectors = null
         }

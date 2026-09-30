@@ -99,6 +99,19 @@ test('knowledge docs add, list and remove', async (t) => {
   assert.equal(profileService.listKnowledgeDocs(agentId).length, 0)
 })
 
+test('knowledge docs accept content beyond the old 20000 character limit', async (t) => {
+  const { db, service, profileService } = fixture(t)
+  const agentId = publishedAgent(t, { db, service })
+  const doc = await profileService.addKnowledgeDoc({
+    agentId,
+    title: '长文档',
+    content: '字'.repeat(30000),
+    actorId: 'owner-1',
+  })
+  assert.equal(doc.chars, 30000)
+  assert.equal(profileService.listKnowledgeDocs(agentId)[0].chars, 30000)
+})
+
 test('upload indexes chunks and relation refresh uses retrieved knowledge', async (t) => {
   const { db, service } = fixture(t)
   const agentId = publishedAgent(t, { db, service })

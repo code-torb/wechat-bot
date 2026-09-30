@@ -92,3 +92,26 @@ test('removeDocument deletes chunks for a doc', async (t) => {
   indexer.removeDocument({ docId: 'doc-a' })
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM knowledge_chunks WHERE doc_id = ?').get('doc-a').count, 0)
 })
+
+test('large documents are embedded in batches', async (t) => {
+  const { db } = fixture(t)
+  const batches = []
+  const indexer = createKnowledgeIndexer({
+    db,
+    embedding: {
+      embed: async (texts) => {
+        batches.push(texts.length)
+        return texts.map((text) => vectorOf(text))
+      },
+    },
+  })
+  const count = await indexer.indexDocument({
+    agentId: 'agent-a',
+    docId: 'doc-a',
+    title: '长文档',
+    content: '字'.repeat(50000),
+  })
+  assert.ok(count > 60)
+  assert.ok(batches.length >= 2)
+  assert.ok(batches.every((size) => size <= 64))
+})
