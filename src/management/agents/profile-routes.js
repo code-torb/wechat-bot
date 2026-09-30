@@ -34,6 +34,13 @@ export function registerProfileRoutes(app, { service, profileService }) {
     }
   })
 
+  app.get('/api/v1/agents/:id/relations', async (request, reply) => {
+    await requireCapability({ resourceType: 'agents', resourceId: request.params.id, operation: 'read:agents' })(request, reply)
+    if (reply.sent) return
+    if (!service.get(request.params.id)) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'agent not found' } })
+    return { data: profileService.listRelations(request.params.id) }
+  })
+
   app.get('/api/v1/agents/:id/graph', async (request, reply) => {
     await requireCapability({ resourceType: 'agents', resourceId: request.params.id, operation: 'read:agents' })(request, reply)
     if (reply.sent) return

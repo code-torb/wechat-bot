@@ -109,7 +109,8 @@ export default function AgentDetailPage() {
 
   const eligibleStyles = (styles || []).filter((style) => style.ownerAgentId === null || style.ownerAgentId === agent.id)
   const availableStyles = eligibleStyles.filter((style) => style.enabled && !draft.styleValues.some((item) => item.definitionId === style.id))
-  const canPublish = Boolean(draft.prompt.trim() && draft.model.modelId.trim() && draft.model.name.trim())
+  const modelId = draft.model?.modelId?.trim() || (draft.model as { providerId?: string }).providerId?.trim() || ''
+  const canPublish = Boolean(draft.prompt.trim() && modelId && draft.model?.name?.trim())
   const updateModel = (model: Partial<Agent['draft']['model']>) => setDraft({ ...draft, model: { ...draft.model, ...model } })
   const updateAttributes = (attributes: Partial<Agent['draft']['attributes']>) =>
     setDraft({ ...draft, attributes: { ...(draft.attributes || {}), ...attributes } })
@@ -493,7 +494,7 @@ export default function AgentDetailPage() {
                   <label>
                     模型
                     <Select
-                      value={draft.model.modelId || undefined}
+                      value={modelId || undefined}
                       placeholder='选择模型'
                       options={(models || []).filter((model) => model.enabled).map((model) => ({ value: model.id, label: model.name }))}
                       onChange={(value) => updateModel({ modelId: value })}

@@ -355,6 +355,13 @@ test('profile APIs manage relations, knowledge and story creation', async (t) =>
     cookies: { [SESSION_COOKIE]: cookie },
   })
   assert.equal(graphAfter.json().data.nodes.length, 1)
+  const relationsList = await app.inject({
+    method: 'GET',
+    url: `/api/v1/agents/${id}/relations`,
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(relationsList.statusCode, 200, relationsList.body)
+  assert.equal(relationsList.json().data.length, 1)
   const story = await app.inject({
     method: 'POST',
     url: '/api/v1/agents/from-story',

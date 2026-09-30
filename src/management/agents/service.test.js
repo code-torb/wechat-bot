@@ -102,6 +102,21 @@ test('concurrent edits allow only one winner', (t) => {
   service.updateDraft({ agentId: agent.id, draft: goodDraft, expectedRevision: 2, actorId: 'b' })
 })
 
+test('legacy providerId model drafts are normalized to modelId', (t) => {
+  const { service } = fixture(t)
+  const agent = service.create({ name: '助手' })
+  service.updateDraft({
+    agentId: agent.id,
+    draft: { ...goodDraft, model: { providerId: 'model-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false } },
+    expectedRevision: 1,
+    actorId: 'a',
+  })
+  const saved = JSON.parse(service.get(agent.id).draft_json)
+  assert.deepEqual(saved.model, { modelId: 'model-a', name: 'test-model', supportsTools: false })
+  const published = service.publish({ agentId: agent.id, expectedRevision: 2, actorId: 'a' })
+  assert.equal(published.model.modelId, 'model-a')
+})
+
 test('rollback creates a new version instead of rewriting history', (t) => {
   const { service } = fixture(t)
   const agent = service.create({ name: '助手' })

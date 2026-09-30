@@ -33,12 +33,20 @@ function sanitizeAttributes(input) {
 function normalizeDraft(input, { requireComplete = false } = {}) {
   const base = defaultDraft()
   const draft = { ...base, ...(input || {}) }
+  const modelInput = draft.model && typeof draft.model === 'object' ? draft.model : {}
+  const modelId =
+    typeof modelInput.modelId === 'string' && modelInput.modelId
+      ? modelInput.modelId
+      : typeof modelInput.providerId === 'string'
+        ? modelInput.providerId
+        : ''
+  const modelName = typeof modelInput.name === 'string' ? modelInput.name : ''
   if (typeof draft.name !== 'string' || !draft.name.trim()) throw new ValidationError('agent name is required')
   if (typeof draft.prompt !== 'string' || (requireComplete && !draft.prompt.trim())) throw new ValidationError('agent prompt is required')
-  if (!draft.model || typeof draft.model.modelId !== 'string' || (requireComplete && !draft.model.modelId)) {
+  if (!draft.model || (requireComplete && !modelId)) {
     throw new ValidationError('agent model is required')
   }
-  if (typeof draft.model.name !== 'string' || (requireComplete && !draft.model.name)) throw new ValidationError('agent model name is required')
+  if (requireComplete && !modelName) throw new ValidationError('agent model name is required')
   if (!Array.isArray(draft.styleValues)) throw new ValidationError('styleValues must be an array')
   if (!Array.isArray(draft.capabilities)) throw new ValidationError('capabilities must be an array')
   return {
@@ -47,9 +55,9 @@ function normalizeDraft(input, { requireComplete = false } = {}) {
     prompt: draft.prompt,
     attributes: sanitizeAttributes(draft.attributes),
     model: {
-      modelId: draft.model.modelId,
-      name: draft.model.name,
-      supportsTools: Boolean(draft.model.supportsTools),
+      modelId,
+      name: modelName,
+      supportsTools: Boolean(modelInput.supportsTools),
     },
     styleValues: draft.styleValues,
     pacing: draft.pacing === null || draft.pacing === undefined ? null : draft.pacing,

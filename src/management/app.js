@@ -88,7 +88,7 @@ export async function createApp({ db, clock = Date.now, sessions, logger = true 
       return payload
     }
     return JSON.stringify({
-      code: 0,
+      code: 'OK',
       message: request.resultMessage || defaultSuccessMessage(request),
       data: 'data' in parsed ? parsed.data : parsed,
       ...(parsed.meta !== undefined ? { meta: parsed.meta } : {}),
