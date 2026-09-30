@@ -61,7 +61,7 @@ function Shell() {
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/:id" element={<AgentDetailPage />} />
             <Route path="/styles" element={<StylesPage />} />
-            <Route path="/qq" element={<QQPage />} />
+            <Route path="/qq" element={<QQPage owner={user.username} />} />
             <Route path="/conversations" element={<ConversationsPage />} />
             <Route path="/commands" element={<CommandsPage />} />
             <Route path="/tools" element={<ToolsPage />} />

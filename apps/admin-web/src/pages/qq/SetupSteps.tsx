@@ -263,11 +263,12 @@ const reasonLabels: Record<string, string> = {
   bot_account_disabled: 'QQ 帐号未启用',
 }
 
-export function ReviewStep({ setup, agents, nickname, online }: {
+export function ReviewStep({ setup, agents, nickname, online, draftMode = false }: {
   setup: QQSetup
   agents: Agent[]
   nickname: string
   online: boolean
+  draftMode?: boolean
 }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const selected = agents.find((agent) => agent.id === setup.defaultAgentId)
@@ -275,8 +276,11 @@ export function ReviewStep({ setup, agents, nickname, online }: {
     <div className="qq-permissions-stack">
       <section className="qq-stage-card">
         <div className="qq-stage-heading">
-          <div><span className="qq-eyebrow">步骤 04 / 04 · 已保存</span><h3>帐号与 Agent 已绑定</h3></div>
-          <p>这是服务器当前保存的配置。修改白名单或切换 Agent 后，可回到前面的步骤重新提交。</p>
+          <div><span className="qq-eyebrow">{draftMode ? '步骤 04 / 04 · 待提交' : 'QQ 帐号 · 已保存'}</span>
+            <h3>{draftMode ? '提交前核对帐号与 Agent' : '帐号与 Agent 已绑定'}</h3></div>
+          <p>{draftMode
+            ? '以下是本次草稿，将在点击“Submit · 提交配置”后一次性保存。可返回前面步骤继续修改。'
+            : '这是服务器当前保存的配置。可在帐号列表中点击“编辑配置”修改。'}</p>
         </div>
         <div className="qq-review-identity">
           <span className="qq-account-avatar">{(nickname || setup.selfId).slice(0, 1)}</span>
@@ -344,7 +348,7 @@ export function ReviewStep({ setup, agents, nickname, online }: {
           ),
         }]} />
       </section>
-      <section className="qq-stage-card">
+      {!draftMode && <section className="qq-stage-card">
         <div className="qq-stage-heading">
           <div><span className="qq-eyebrow">路由预览</span><h3>用一条示例消息检查配置</h3></div>
           <p>此处只计算白名单、触发词、Agent 和权限上限，不会向 QQ 发送消息或调用模型。</p>
@@ -380,7 +384,7 @@ export function ReviewStep({ setup, agents, nickname, online }: {
             </Space>
           ) : '请检查白名单、触发方式或 Agent 状态。'}
         />}
-      </section>
+      </section>}
     </div>
   )
 }

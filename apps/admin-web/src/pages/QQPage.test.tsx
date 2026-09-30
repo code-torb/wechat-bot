@@ -8,6 +8,7 @@ import { setCsrf } from '../api/client'
 beforeEach(() => {
   setCsrf('test-csrf')
   vi.stubGlobal('fetch', vi.fn())
+  sessionStorage.clear()
 })
 
 it('renders a scannable QR code and refreshes it through the protected management API', async () => {
@@ -27,11 +28,39 @@ it('renders a scannable QR code and refreshes it through the protected managemen
       <QQPage />
     </QueryClientProvider>,
   )
+  expect(screen.getByText('QQ 帐号与登录状态')).toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: 'QQ 配置步骤' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /添加 QQ 帐号/ }))
   await waitFor(() => expect(container.querySelector('.qq-qr svg')).toBeInTheDocument())
+  expect(screen.getByRole('navigation', { name: 'QQ 配置步骤' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /刷新二维码/ }))
   await waitFor(() => expect(requests.some((request) => request.path === '/api/v1/qq/login/refresh')).toBe(true))
   const refresh = requests.find((request) => request.path === '/api/v1/qq/login/refresh')
   expect(refresh?.init?.headers).toMatchObject({ 'x-csrf-token': 'test-csrf' })
+})
+
+it('requires a different NapCat login before adding an already configured QQ account', async () => {
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const path = String(input)
+    let data: unknown = []
+    if (path === '/api/v1/qq/accounts') data = [{ id: 'bot-a', selfId: '12345', defaultAgentId: 'agent-a', enabled: true }]
+    if (path === '/api/v1/qq/login') data = { isLogin: true, isOffline: false, selfId: '12345', accountId: 'bot-a', oneBotReady: true }
+    if (path === '/api/v1/qq/connection') data = { revision: 'b'.repeat(64), port: 3001, tokenConfigured: true, ready: true, services: [] }
+    if (path.endsWith('/setup')) data = {
+      accountId: 'bot-a', selfId: '12345', defaultAgentId: 'agent-a',
+      rules: [], bindings: [], grants: [], revision: 'a'.repeat(64),
+    }
+    return { ok: true, json: async () => ({ data }) } as Response
+  })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter><QQPage /></MemoryRouter>
+    </QueryClientProvider>,
+  )
+  await screen.findByText('QQ 号 12345')
+  fireEvent.click(screen.getByRole('button', { name: /添加 QQ 帐号/ }))
+  expect(await screen.findByText('这个 QQ 号已经配置过')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '保存草稿，选择 Agent' })).toBeDisabled()
 })
 
 it('keeps Agent and white-list changes in a draft until one submission, then shows the saved route', async () => {
@@ -65,13 +94,17 @@ it('keeps Agent and white-list changes in a draft until one submission, then sho
       <MemoryRouter><QQPage /></MemoryRouter>
     </QueryClientProvider>,
   )
-  const next = await screen.findByRole('button', { name: '下一步：选择 Agent' })
+  expect(await screen.findByText('QQ 帐号与登录状态')).toBeInTheDocument()
+  expect(await screen.findByText('QQ 号 12345')).toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: 'QQ 配置步骤' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /添加 QQ 帐号/ }))
+  const next = await screen.findByRole('button', { name: '保存草稿，选择 Agent' })
   await waitFor(() => expect(next).toBeEnabled())
   fireEvent.click(next)
   expect(await screen.findByText('回答群里的日常问题')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: /查看详情/ })).toHaveAttribute('href', '/agents/agent-a')
   fireEvent.click(screen.getByRole('button', { name: '选择此 Agent' }))
-  fireEvent.click(screen.getByRole('button', { name: '下一步：设置白名单与权限' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿，设置白名单与权限' }))
   expect(screen.getByText('仅对话')).toBeInTheDocument()
   expect(screen.getByText('修改文件')).toBeInTheDocument()
   expect(requests.filter((request) => request.init?.method === 'PUT')).toHaveLength(0)
@@ -82,18 +115,25 @@ it('keeps Agent and white-list changes in a draft until one submission, then sho
   fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1' } })
   fireEvent.click(screen.getByRole('button', { name: '更新草稿' }))
   await waitFor(() => expect(screen.getByText('L1 · 联网与表情')).toBeInTheDocument())
-  fireEvent.click(screen.getByRole('button', { name: '保存配置并查看结果' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿，预览详情' }))
+  expect(screen.getByText('提交前核对帐号与 Agent')).toBeInTheDocument()
+  expect(screen.getByText('L1 · 联网与表情')).toBeInTheDocument()
+  expect(requests.filter((request) => request.init?.method === 'PUT')).toHaveLength(0)
+  expect(screen.queryByRole('button', { name: '查看路由' })).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Submit · 提交配置' }))
   await waitFor(() => expect(requests.some((request) => request.path === '/api/v1/qq/accounts/bot-a/setup' && request.init?.method === 'PUT')).toBe(true))
   const submitted = requests.find((request) => request.path === '/api/v1/qq/accounts/bot-a/setup' && request.init?.method === 'PUT')
   expect(JSON.parse(String(submitted?.init?.body))).toMatchObject({ defaultAgentId: 'agent-a', rules: [{ scopeType: 'group', scopeKey: '98765', maxLevel: 1 }] })
   expect(submitted?.init?.headers).toMatchObject({ 'x-csrf-token': 'test-csrf' })
   expect(await screen.findByText('帐号与 Agent 已绑定')).toBeInTheDocument()
-  expect(screen.getByText('小测试')).toBeInTheDocument()
+  expect(screen.getByText('QQ 帐号与登录状态')).toBeInTheDocument()
+  expect(screen.queryByRole('navigation', { name: 'QQ 配置步骤' })).not.toBeInTheDocument()
+  expect(screen.getAllByText('小测试').length).toBeGreaterThan(0)
   fireEvent.click(screen.getByText('查看单独绑定与工具授权详情'))
   expect(screen.getByText('发言者工具授权')).toBeInTheDocument()
 }, 30000)
 
-it('keeps an unsaved Agent selection when switching between QQ accounts', async () => {
+it('keeps each QQ account draft when returning to the list and opening another account', async () => {
   vi.mocked(fetch).mockImplementation(async (input) => {
     const path = String(input)
     let data: unknown = []
@@ -115,23 +155,35 @@ it('keeps an unsaved Agent selection when switching between QQ accounts', async 
     }
     return { ok: true, json: async () => ({ data }) } as Response
   })
+  const { unmount } = render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter><QQPage /></MemoryRouter>
+    </QueryClientProvider>,
+  )
+  await screen.findByText('QQ 帐号与登录状态')
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '编辑配置' })).toHaveLength(2), { timeout: 5000 })
+  expect(screen.getByText('当前未登录')).toBeInTheDocument()
+  fireEvent.click(screen.getAllByRole('button', { name: '编辑配置' })[0])
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存草稿，选择 Agent' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿，选择 Agent' }))
+  fireEvent.click(screen.getByRole('button', { name: '选择此 Agent' }))
+  fireEvent.click(screen.getByRole('button', { name: '返回 QQ 帐号列表' }))
+  expect(screen.getByText('此帐号有尚未提交的草稿。')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '编辑配置' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存草稿，选择 Agent' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿，选择 Agent' }))
+  expect(screen.getByRole('button', { name: '选择此 Agent' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '返回 QQ 帐号列表' }))
+  expect(sessionStorage.getItem('qq-setup-drafts-v1:preview')).toContain('agent-a')
+  unmount()
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter><QQPage /></MemoryRouter>
     </QueryClientProvider>,
   )
-  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：选择 Agent' })).toBeEnabled(), { timeout: 5000 })
-  fireEvent.click(screen.getByRole('button', { name: '下一步：选择 Agent' }))
-  fireEvent.click(screen.getByRole('button', { name: '选择此 Agent' }))
-  fireEvent.click(screen.getByRole('button', { name: '01 QQ 帐号' }))
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: '正在配置的 QQ 帐号' }))
-  fireEvent.click(await screen.findByText('QQ 67890 · 已保存帐号'))
-  await waitFor(() => expect(screen.getByRole('button', { name: '下一步：选择 Agent' })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: '下一步：选择 Agent' }))
-  expect(screen.getByRole('button', { name: '选择此 Agent' })).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '01 QQ 帐号' }))
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: '正在配置的 QQ 帐号' }))
-  fireEvent.click(await screen.findByText('QQ 12345 · 当前在线'))
-  fireEvent.click(screen.getByRole('button', { name: '下一步：选择 Agent' }))
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '继续草稿' })).toHaveLength(2))
+  fireEvent.click(screen.getAllByRole('button', { name: '继续草稿' })[0])
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存草稿，选择 Agent' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿，选择 Agent' }))
   expect(screen.getByRole('button', { name: '当前选择' })).toBeInTheDocument()
 }, 30000)
