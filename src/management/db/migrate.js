@@ -38,10 +38,15 @@ export function migrate(db) {
       lastVersion = version
       continue
     }
-    db.transaction(() => {
-      db.exec(sql)
-      db.prepare('INSERT INTO migrations (version, checksum, applied_at) VALUES (?, ?, ?)').run(version, sum, Date.now())
-    })()
+    db.exec('PRAGMA foreign_keys = OFF')
+    try {
+      db.transaction(() => {
+        db.exec(sql)
+        db.prepare('INSERT INTO migrations (version, checksum, applied_at) VALUES (?, ?, ?)').run(version, sum, Date.now())
+      })()
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON')
+    }
     lastVersion = version
   }
   return lastVersion

@@ -399,9 +399,12 @@ test('/new starts a fresh context and replies immediately', async (t) => {
   assert.equal(scheduled.reply.text, '好的，已开启一轮新的对话。')
   const run = db.prepare('SELECT status, conversation_id FROM runs WHERE id = ?').get(accepted.runId)
   assert.equal(run.status, 'sent')
-  const conversation = db.prepare('SELECT current_epoch FROM conversations WHERE id = ?').get(run.conversation_id)
-  assert.equal(conversation.current_epoch, 2)
-  assert.equal(scheduled.epoch, conversation.current_epoch)
+  const oldRow = db.prepare('SELECT active FROM conversations WHERE id = ?').get(run.conversation_id)
+  assert.equal(oldRow.active, 0)
+  const fresh = db.prepare('SELECT active, current_epoch FROM conversations ORDER BY created_at DESC LIMIT 1').get()
+  assert.equal(fresh.active, 1)
+  assert.equal(fresh.current_epoch, 1)
+  assert.equal(scheduled.epoch, 1)
 })
 
 test('/help lists the built-in new chat command', async (t) => {

@@ -9,6 +9,7 @@ function serializeConversation(row) {
     senderId: row.sender_id,
     agentId: row.agent_id,
     epoch: row.current_epoch,
+    active: Boolean(row.active),
     updatedAt: row.updated_at,
   }
 }

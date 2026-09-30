@@ -78,6 +78,25 @@ test('reset keeps history but starts a new context epoch', (t) => {
   assert.deepEqual(conversations.getContext({ conversationId, epoch: reset.epoch, maxTurns: 10 }), [])
 })
 
+test('closeAndStart closes the old conversation and starts a fresh row', (t) => {
+  const { conversations } = fixture(t)
+  const { conversationId } = conversations.accept({ message: message(), agentId: 'agent-a', agentVersionId: 'v1' })
+  const started = conversations.closeAndStart({
+    conversationId,
+    message: message(),
+    agentId: 'agent-a',
+    agentVersionId: 'v1',
+  })
+  assert.notEqual(started.conversationId, conversationId)
+  assert.equal(started.epoch, 1)
+  assert.equal(conversations.get(conversationId).active, 0)
+  const fresh = conversations.get(started.conversationId)
+  assert.equal(fresh.active, 1)
+  assert.equal(fresh.current_epoch, 1)
+  const next = conversations.accept({ message: message({ messageId: '2', text: '新对话' }), agentId: 'agent-a', agentVersionId: 'v1' })
+  assert.equal(next.conversationId, started.conversationId)
+})
+
 test('delete messages removes history and bumps epoch', (t) => {
   const { conversations } = fixture(t)
   const { conversationId } = conversations.accept({ message: message(), agentId: 'agent-a', agentVersionId: 'v1' })

@@ -70,6 +70,7 @@ export type Conversation = {
   senderId: string
   agentId: string
   epoch: number
+  active: boolean
   updatedAt: number
 }
 

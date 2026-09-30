@@ -17,12 +17,14 @@ export function createConversationStore(db) {
           return { duplicate: true }
         }
         let conversation = db
-          .prepare('SELECT * FROM conversations WHERE bot_account_id = ? AND scene = ? AND peer_id = ? AND sender_id = ? AND agent_id = ?')
+          .prepare(
+            'SELECT * FROM conversations WHERE bot_account_id = ? AND scene = ? AND peer_id = ? AND sender_id = ? AND agent_id = ? AND active = 1 ORDER BY updated_at DESC LIMIT 1',
+          )
           .get(message.botAccountId, message.scene, message.peerId, message.senderId, agentId)
         if (!conversation) {
           const id = randomUUID()
           db.prepare(
-            'INSERT INTO conversations (id, bot_account_id, scene, peer_id, sender_id, agent_id, current_epoch, last_agent_version_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)',
+            'INSERT INTO conversations (id, bot_account_id, scene, peer_id, sender_id, agent_id, current_epoch, last_agent_version_id, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?)',
           ).run(id, message.botAccountId, message.scene, message.peerId, message.senderId, agentId, agentVersionId || null, now, now)
           conversation = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id)
         }
@@ -46,6 +48,17 @@ export function createConversationStore(db) {
         return { duplicate: false, conversationId: conversation.id, epoch: conversation.current_epoch, runId }
       })()
       return result
+    },
+    closeAndStart({ conversationId, message, agentId, agentVersionId }) {
+      const now = Date.now()
+      return db.transaction(() => {
+        db.prepare('UPDATE conversations SET active = 0, updated_at = ? WHERE id = ?').run(now, conversationId)
+        const id = randomUUID()
+        db.prepare(
+          'INSERT INTO conversations (id, bot_account_id, scene, peer_id, sender_id, agent_id, current_epoch, last_agent_version_id, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?, ?)',
+        ).run(id, message.botAccountId, message.scene, message.peerId, message.senderId, agentId, agentVersionId || null, now, now)
+        return { conversationId: id, epoch: 1 }
+      })()
     },
     get(conversationId) {
       return db.prepare('SELECT * FROM conversations WHERE id = ?').get(conversationId)

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Select, Space, Table, Timeline, Typography, message } from 'antd'
+import { Button, Input, Select, Space, Table, Tag, Timeline, Typography, message } from 'antd'
 import { useState } from 'react'
 import { api } from '../api/client'
 import type { Conversation, MessageRow } from '../api/types'
@@ -10,8 +10,7 @@ export default function ConversationsPage() {
   const [selected, setSelected] = useState<Conversation | null>(null)
   const { data: conversations } = useQuery({
     queryKey: ['conversations', filters],
-    queryFn: () =>
-      api<Conversation[]>('/api/v1/conversations' + (filters.scene ? `?scene=${filters.scene}` : '')).then((result) => result.data),
+    queryFn: () => api<Conversation[]>('/api/v1/conversations' + (filters.scene ? `?scene=${filters.scene}` : '')).then((result) => result.data),
   })
   const { data: messages } = useQuery({
     queryKey: ['messages', selected?.id],
@@ -30,20 +29,23 @@ export default function ConversationsPage() {
     },
   })
   return (
-    <div className="page">
+    <div className='page'>
       <h2>会话记录</h2>
       <Space style={{ marginBottom: 12 }}>
         <Select
           allowClear
-          placeholder="场景"
+          placeholder='场景'
           style={{ width: 140 }}
-          options={[{ value: 'group', label: '群聊' }, { value: 'private', label: '私聊' }]}
+          options={[
+            { value: 'group', label: '群聊' },
+            { value: 'private', label: '私聊' },
+          ]}
           onChange={(value) => setFilters({ ...filters, scene: value })}
         />
-        <Input placeholder="发言人 QQ" style={{ width: 180 }} onChange={(event) => setFilters({ ...filters, senderId: event.target.value })} />
+        <Input placeholder='发言人 QQ' style={{ width: 180 }} onChange={(event) => setFilters({ ...filters, senderId: event.target.value })} />
       </Space>
       <Table<Conversation>
-        rowKey="id"
+        rowKey='id'
         dataSource={conversations || []}
         pagination={{ pageSize: 20 }}
         onRow={(row) => ({ onClick: () => setSelected(row), style: { cursor: 'pointer' } })}
@@ -53,25 +55,33 @@ export default function ConversationsPage() {
           { title: '发言人', dataIndex: 'senderId' },
           { title: 'Agent', dataIndex: 'agentId' },
           { title: '上下文段', dataIndex: 'epoch' },
+          { title: '状态', dataIndex: 'active', render: (value: boolean) => (value ? <Tag color='green'>当前</Tag> : <Tag>历史</Tag>) },
         ]}
       />
       {selected && (
         <div style={{ marginTop: 16 }}>
           <Space>
             <Typography.Text strong>会话 {selected.id}</Typography.Text>
-            <Button size="small" onClick={() => reset.mutate(selected.id)}>清除上下文</Button>
-            <Button size="small" danger onClick={() => remove.mutate(selected.id)}>删除历史</Button>
+            <Button size='small' onClick={() => reset.mutate(selected.id)}>
+              清除上下文
+            </Button>
+            <Button size='small' danger onClick={() => remove.mutate(selected.id)}>
+              删除历史
+            </Button>
           </Space>
-          <Timeline style={{ marginTop: 12 }} items={(messages || []).map((row) => ({
-            color: row.deliveryStatus === 'sent' ? 'green' : 'gray',
-            children: (
-              <div>
-                <Typography.Text type={row.role === 'user' ? undefined : 'secondary'}>{row.role === 'user' ? '用户' : '机器人'}</Typography.Text>
-                <div>{row.text}</div>
-                <div className="muted">状态：{row.deliveryStatus}</div>
-              </div>
-            ),
-          }))} />
+          <Timeline
+            style={{ marginTop: 12 }}
+            items={(messages || []).map((row) => ({
+              color: row.deliveryStatus === 'sent' ? 'green' : 'gray',
+              children: (
+                <div>
+                  <Typography.Text type={row.role === 'user' ? undefined : 'secondary'}>{row.role === 'user' ? '用户' : '机器人'}</Typography.Text>
+                  <div>{row.text}</div>
+                  <div className='muted'>状态：{row.deliveryStatus}</div>
+                </div>
+              ),
+            }))}
+          />
         </div>
       )}
     </div>

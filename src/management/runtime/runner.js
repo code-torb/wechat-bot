@@ -160,11 +160,24 @@ export function createAgentRuntime({
       })
     }
     if (command?.builtin === 'reset' || command?.builtin === 'newchat') {
-      const reset = conversations.reset({ conversationId, actor: null })
       scheduler.cancelForConversation({ conversationId, epoch, reason: 'reset' })
       db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
+      if (command.builtin === 'newchat') {
+        const started = conversations.closeAndStart({
+          conversationId,
+          message: { botAccountId: message.botAccountId, scene: message.scene, peerId: message.peerId, senderId: message.senderId },
+          agentId: agentVersion.id,
+        })
+        return {
+          text: NEW_CHAT_REPLY,
+          immediate: true,
+          epoch: started.epoch,
+          requiredCapabilities: ['chat'],
+        }
+      }
+      const reset = conversations.reset({ conversationId, actor: null })
       return {
-        text: command.builtin === 'newchat' ? NEW_CHAT_REPLY : RESET_REPLY,
+        text: RESET_REPLY,
         immediate: true,
         epoch: reset.epoch,
         requiredCapabilities: ['chat'],
@@ -217,11 +230,24 @@ export function createAgentRuntime({
         helpItems: [],
       })
       if (result.type === 'reset' || result.type === 'newchat') {
-        const reset = conversations.reset({ conversationId, actor: null })
         scheduler.cancelForConversation({ conversationId, epoch, reason: 'reset' })
         db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
+        if (result.type === 'newchat') {
+          const started = conversations.closeAndStart({
+            conversationId,
+            message: { botAccountId: message.botAccountId, scene: message.scene, peerId: message.peerId, senderId: message.senderId },
+            agentId: agentVersion.id,
+          })
+          return {
+            text: NEW_CHAT_REPLY,
+            immediate: true,
+            epoch: started.epoch,
+            requiredCapabilities: ['chat'],
+          }
+        }
+        const reset = conversations.reset({ conversationId, actor: null })
         return {
-          text: result.type === 'newchat' ? NEW_CHAT_REPLY : RESET_REPLY,
+          text: RESET_REPLY,
           immediate: true,
           epoch: reset.epoch,
           requiredCapabilities: ['chat'],
