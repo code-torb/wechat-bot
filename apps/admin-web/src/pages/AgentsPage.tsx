@@ -30,7 +30,6 @@ export default function AgentsPage() {
       queryClient.invalidateQueries({ queryKey: ['agents'] })
       navigate(`/agents/${result.id}`)
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '创建失败'),
   })
   const analyzeStory = useMutation({
     mutationFn: () =>
@@ -42,12 +41,11 @@ export default function AgentsPage() {
       setCharacters(result.data.characters)
       setSelectedCharacter(undefined)
       if (result.data.characters.length) {
-        message.success(`识别到 ${result.data.characters.length} 位人物，请选择要创建的角色`)
+        message.info(`识别到 ${result.data.characters.length} 位人物，请选择要创建的角色`)
       } else {
         message.warning('没有识别到人物，请手动填写角色名')
       }
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '分析失败'),
   })
   const createFromStory = useMutation({
     mutationFn: async () => {
@@ -68,18 +66,14 @@ export default function AgentsPage() {
       setCharacters([])
       setSelectedCharacter(undefined)
       queryClient.invalidateQueries({ queryKey: ['agents'] })
-      message.success('已根据小说创建角色：原文已入库，人物关系已生成图谱')
       navigate(`/agents/${result.id}`)
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '创建失败'),
   })
   const removeAgent = useMutation({
     mutationFn: (agentId: string) => api(`/api/v1/agents/${agentId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      message.success('Agent 已删除')
       queryClient.invalidateQueries({ queryKey: ['agents'] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
   })
   const canCreateFromStory = Boolean(storyFile?.base64 && (selectedCharacter || storyNameHint.trim()))
   return (

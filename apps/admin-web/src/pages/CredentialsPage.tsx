@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, Select, Table, Tag, message } from 'antd'
+import { Button, Form, Input, Select, Table, Tag } from 'antd'
 import { api } from '../api/client'
 import type { Credential, Provider } from '../api/types'
 
@@ -23,8 +23,6 @@ export default function CredentialsPage() {
   })
   const testCredential = useMutation({
     mutationFn: (id: string) => api(`/api/v1/credentials/${id}/test`, { method: 'POST', body: {} }),
-    onSuccess: () => message.success('凭据可解密，完整性校验通过'),
-    onError: (error) => message.error(error instanceof Error ? error.message : '校验失败'),
   })
   return (
     <div className='page'>

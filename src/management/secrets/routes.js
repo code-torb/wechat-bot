@@ -105,6 +105,7 @@ export function registerCredentialRoutes(app, { db, secretStore }) {
     scope.post('/api/v1/credentials/:id/test', async (request, reply) => {
       const row = db.prepare('SELECT * FROM credentials WHERE id = ?').get(request.params.id)
       if (!row) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'credential not found' } })
+      request.resultMessage = '凭据校验通过'
       try {
         secretStore.withSecret(row, () => {})
         return { data: { ok: true, method: 'local-integrity' } }

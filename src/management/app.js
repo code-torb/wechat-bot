@@ -60,6 +60,41 @@ export async function createApp({ db, clock = Date.now, sessions, logger = true 
 
   app.decorate('db', db)
 
+  function defaultSuccessMessage(request) {
+    if (request.url.startsWith('/api/v1/auth/')) return ''
+    if (request.method === 'POST') return '操作成功'
+    if (request.method === 'PUT' || request.method === 'PATCH') return '更新成功'
+    if (request.method === 'DELETE') return '删除成功'
+    return ''
+  }
+
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (payload === undefined || typeof payload !== 'string') return payload
+    let parsed
+    try {
+      parsed = JSON.parse(payload)
+    } catch {
+      return payload
+    }
+    if (!parsed || typeof parsed !== 'object') return payload
+    if (reply.statusCode >= 400) {
+      if (parsed.error && typeof parsed.error === 'object') {
+        return JSON.stringify({
+          code: parsed.error.code || 'ERROR',
+          message: parsed.error.message || '操作失败',
+          data: null,
+        })
+      }
+      return payload
+    }
+    return JSON.stringify({
+      code: 0,
+      message: request.resultMessage || defaultSuccessMessage(request),
+      data: 'data' in parsed ? parsed.data : parsed,
+      ...(parsed.meta !== undefined ? { meta: parsed.meta } : {}),
+    })
+  })
+
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'request failed')
     if (error.validation?.length) {

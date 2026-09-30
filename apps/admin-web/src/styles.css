@@ -4,6 +4,24 @@ body {
   color: rgba(0, 0, 0, 0.88);
 }
 
+.app-brand {
+  padding: 20px 16px;
+  font-weight: 700;
+  color: #17343c;
+}
+.page .ant-btn:focus-visible {
+  outline: 3px solid #4ea99f;
+  outline-offset: 2px;
+}
+.page .ant-btn-primary:not(:disabled):hover {
+  background: #0a8f82;
+  box-shadow: 0 4px 12px rgba(8, 122, 112, 0.22);
+}
+.page .ant-btn:not(.ant-btn-primary):not(:disabled):hover {
+  border-color: #087a70;
+  color: #087a70;
+}
+
 .page {
   padding: 16px;
   max-width: 1200px;

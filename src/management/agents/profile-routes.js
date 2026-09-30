@@ -216,6 +216,7 @@ export function registerProfileRoutes(app, { service, profileService }) {
     async (request, reply) => {
       await requireCapability({ resourceType: 'agents', operation: 'write:agents' })(request, reply)
       if (reply.sent) return
+      request.resultMessage = '已识别小说主要人物'
       try {
         const data = await profileService.analyzeStory({
           dataBase64: request.body.dataBase64,
@@ -249,6 +250,7 @@ export function registerProfileRoutes(app, { service, profileService }) {
     async (request, reply) => {
       await requireCapability({ resourceType: 'agents', operation: 'write:agents' })(request, reply)
       if (reply.sent) return
+      request.resultMessage = '已根据小说创建角色，原文已入库，关系图谱已生成'
       try {
         const agent = await profileService.createFromStory({
           dataBase64: request.body.dataBase64,

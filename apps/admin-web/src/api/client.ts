@@ -1,4 +1,6 @@
-export type ApiResult<T> = { data: T; meta?: { nextCursor?: string | null } }
+import { message } from 'antd'
+
+export type ApiResult<T> = { code: number | string; message: string; data: T; meta?: { nextCursor?: string | null } }
 
 let csrfToken = ''
 
@@ -34,8 +36,15 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<Ap
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
   const payload = await response.json().catch(() => ({}))
+  const code = payload?.code ?? payload?.error?.code
+  const messageText = payload?.message ?? payload?.error?.message
   if (!response.ok) {
-    throw new ApiError(payload?.error?.code || 'REQUEST_FAILED', payload?.error?.message || `request failed (${response.status})`, response.status)
+    message.error(messageText || `request failed (${response.status})`)
+    throw new ApiError(code || 'REQUEST_FAILED', messageText || `request failed (${response.status})`, response.status)
   }
-  return payload as ApiResult<T>
+  const method = (options.method || 'GET').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && payload?.message) {
+    message.success(payload.message)
+  }
+  return { data: payload?.data, meta: payload?.meta } as ApiResult<T>
 }

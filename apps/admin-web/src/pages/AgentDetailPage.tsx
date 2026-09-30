@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Table, Tabs, Tag, message } from 'antd'
+import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Table, Tabs, Tag } from 'antd'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -49,45 +49,35 @@ export default function AgentDetailPage() {
     mutationFn: (edited: Agent['draft']) =>
       api(`/api/v1/agents/${id}/publish`, { method: 'POST', body: { expectedRevision: agent?.revision, draft: edited } }),
     onSuccess: () => {
-      message.success('已保存并发布新版本')
       queryClient.invalidateQueries({ queryKey: ['agent', id] })
       queryClient.invalidateQueries({ queryKey: ['agents'] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '保存并发布失败'),
   })
 
   const addRelation = useMutation({
     mutationFn: () => api<AgentRelation>(`/api/v1/agents/${id}/relations`, { method: 'POST', body: relationForm }),
     onSuccess: () => {
-      message.success('人物关系已保存')
       setRelationForm({ personName: '', relation: '' })
       queryClient.invalidateQueries({ queryKey: ['relations', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '保存人物关系失败'),
   })
   const refreshRelation = useMutation({
     mutationFn: (relationId: string) => api(`/api/v1/agents/${id}/relations/${relationId}/refresh`, { method: 'POST', body: {} }),
     onSuccess: () => {
-      message.success('关系上下文已更新')
       queryClient.invalidateQueries({ queryKey: ['relations', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '更新失败'),
   })
   const refreshAll = useMutation({
     mutationFn: () => api<{ updated: number }>(`/api/v1/agents/${id}/relations/refresh-all`, { method: 'POST', body: {} }),
-    onSuccess: (result) => {
-      message.success(`已更新 ${result.data.updated} 位人物关系`)
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['relations', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '更新失败'),
   })
   const removeRelation = useMutation({
     mutationFn: (relationId: string) => api(`/api/v1/agents/${id}/relations/${relationId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      message.success('人物关系已删除')
       queryClient.invalidateQueries({ queryKey: ['relations', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
   })
 
   const uploadKnowledge = useMutation({
@@ -100,19 +90,15 @@ export default function AgentDetailPage() {
       return result.data
     },
     onSuccess: () => {
-      message.success('已上传文本')
       setKnowledgeForm({ title: '', base64: '', fileName: '' })
       queryClient.invalidateQueries({ queryKey: ['knowledge-docs', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '上传失败'),
   })
   const removeKnowledge = useMutation({
     mutationFn: (docId: string) => api(`/api/v1/agents/${id}/knowledge-docs/${docId}`, { method: 'DELETE' }),
     onSuccess: () => {
-      message.success('资料已删除')
       queryClient.invalidateQueries({ queryKey: ['knowledge-docs', id] })
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
   })
 
   if (isLoading || !agent || !draft) return <Spin style={{ display: 'block', margin: '80px auto' }} />

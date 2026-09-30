@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Form, Input, Select, Table, message } from 'antd'
+import { Button, Form, Input, Select, Table } from 'antd'
 import { api } from '../api/client'
 import type { CommandDefinition } from '../api/types'
 
@@ -12,15 +12,14 @@ export default function CommandsPage() {
   const create = useMutation({
     mutationFn: (values: Record<string, unknown>) => api('/api/v1/commands', { method: 'POST', body: values }),
     onSuccess: () => {
-      message.success('命令已创建')
       queryClient.invalidateQueries({ queryKey: ['commands'] })
     },
   })
   return (
-    <div className="page">
+    <div className='page'>
       <h2>命令模板</h2>
       <Form
-        layout="inline"
+        layout='inline'
         style={{ marginBottom: 12 }}
         onFinish={(values) =>
           create.mutate({
@@ -32,15 +31,34 @@ export default function CommandsPage() {
           })
         }
       >
-        <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="命令名，如 translate" /></Form.Item>
-        <Form.Item name="aliases"><Input placeholder="别名，逗号分隔" /></Form.Item>
-        <Form.Item name="executionType" initialValue="static"><Select style={{ width: 150 }} options={[{ value: 'static', label: '固定回复' }, { value: 'model_task', label: '模型任务' }, { value: 'workflow', label: '工作流' }]} /></Form.Item>
-        <Form.Item name="steps"><Input placeholder='[{"text":"..."}] 或 [{"template":"..."}]' /></Form.Item>
-        <Form.Item name="capabilities"><Input placeholder="所需能力，逗号分隔" /></Form.Item>
-        <Button type="primary" htmlType="submit">创建命令</Button>
+        <Form.Item name='name' rules={[{ required: true }]}>
+          <Input placeholder='命令名，如 translate' />
+        </Form.Item>
+        <Form.Item name='aliases'>
+          <Input placeholder='别名，逗号分隔' />
+        </Form.Item>
+        <Form.Item name='executionType' initialValue='static'>
+          <Select
+            style={{ width: 150 }}
+            options={[
+              { value: 'static', label: '固定回复' },
+              { value: 'model_task', label: '模型任务' },
+              { value: 'workflow', label: '工作流' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name='steps'>
+          <Input placeholder='[{"text":"..."}] 或 [{"template":"..."}]' />
+        </Form.Item>
+        <Form.Item name='capabilities'>
+          <Input placeholder='所需能力，逗号分隔' />
+        </Form.Item>
+        <Button type='primary' htmlType='submit'>
+          创建命令
+        </Button>
       </Form>
       <Table<CommandDefinition>
-        rowKey="id"
+        rowKey='id'
         dataSource={data || []}
         columns={[
           { title: '名称', dataIndex: 'name' },

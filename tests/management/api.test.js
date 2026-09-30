@@ -154,7 +154,7 @@ test('agent creation returns a useful error for an empty name', async (t) => {
     payload: { name: '' },
   })
   assert.equal(response.statusCode, 422)
-  assert.deepEqual(response.json().error, { code: 'VALIDATION', message: 'agent name is required' })
+  assert.deepEqual(response.json(), { code: 'VALIDATION', message: 'agent name is required', data: null })
   const missing = await app.inject({
     method: 'POST',
     url: '/api/v1/agents',
@@ -163,8 +163,8 @@ test('agent creation returns a useful error for an empty name', async (t) => {
     payload: {},
   })
   assert.equal(missing.statusCode, 400)
-  assert.equal(missing.json().error.code, 'VALIDATION')
-  assert.match(missing.json().error.message, /name/)
+  assert.equal(missing.json().code, 'VALIDATION')
+  assert.match(missing.json().message, /name/)
 })
 
 test('invalid Agent request fields identify the failing field instead of Fastify internals', async (t) => {
@@ -177,8 +177,8 @@ test('invalid Agent request fields identify the failing field instead of Fastify
     cookies: { [SESSION_COOKIE]: cookie },
   })
   assert.equal(response.statusCode, 400)
-  assert.equal(response.json().error.code, 'VALIDATION')
-  assert.match(response.json().error.message, /status/)
+  assert.equal(response.json().code, 'VALIDATION')
+  assert.match(response.json().message, /status/)
 })
 
 test('new agents accept prompt and model edits separately before publish', async (t) => {
