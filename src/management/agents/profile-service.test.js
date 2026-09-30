@@ -101,11 +101,11 @@ test('knowledge docs accept content beyond the old 20000 character limit', async
   const doc = await profileService.addKnowledgeDoc({
     agentId,
     title: '长文档',
-    content: '字'.repeat(30000),
+    content: '字'.repeat(1200000),
     actorId: 'owner-1',
   })
-  assert.equal(doc.chars, 30000)
-  assert.equal(profileService.listKnowledgeDocs(agentId)[0].chars, 30000)
+  assert.equal(doc.chars, 1200000)
+  assert.equal(profileService.listKnowledgeDocs(agentId)[0].chars, 1200000)
 })
 
 test('upload indexes chunks and relation refresh uses retrieved knowledge', async (t) => {

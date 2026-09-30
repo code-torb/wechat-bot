@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { decodeStory, parseStory } from './story-parser.js'
 
 export const RELATIONS_TTL_MS = 12 * 60 * 60 * 1000
-const MAX_KNOWLEDGE_CHARS = 1000000
+const MAX_KNOWLEDGE_CHARS = 5000000
 
 function serializeRelation(row) {
   return {
