@@ -199,3 +199,50 @@ test('style definition and agent pacing routes update drafts and publish snapsho
   assert.equal(snapshot.styleValues[0].activationGeneration, 1)
   assert.deepEqual(snapshot.pacing, { baseDelayMs: 1500, charsPerSecond: 12, maxDelayMs: 12000 })
 })
+
+test('style definitions expose readable anchors and can edit a version with a zero default', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/style-definitions',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {
+      key: 'curiosity',
+      name: '好奇程度',
+      description: '决定是否主动追问。',
+      defaultValue: 0.5,
+      lowText: '直接回答，不主动追问',
+      midText: '在必要时追问',
+      highText: '主动探索对方的意图',
+    },
+  })
+  assert.equal(created.statusCode, 201)
+  const id = created.json().data.id
+  const listed = await app.inject({
+    method: 'GET',
+    url: '/api/v1/style-definitions',
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(listed.statusCode, 200)
+  assert.equal(listed.json().data[0].currentVersion.defaultValue, 0.5)
+  assert.equal(listed.json().data[0].currentVersion.lowText, '直接回答，不主动追问')
+
+  const edited = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/style-definitions/${id}`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { name: '探索程度', description: '控制追问主动性。', defaultValue: 0, highText: '更主动地提出一个贴切问题' },
+  })
+  assert.equal(edited.statusCode, 200)
+  assert.equal(edited.json().data.currentVersion.name, '探索程度')
+  assert.equal(edited.json().data.currentVersion.description, '控制追问主动性。')
+  assert.equal(edited.json().data.currentVersion.defaultValue, 0)
+  assert.equal(edited.json().data.currentVersion.lowText, '直接回答，不主动追问')
+  assert.equal(edited.json().data.currentVersion.highText, '更主动地提出一个贴切问题')
+  assert.notEqual(edited.json().data.currentVersion.id, created.json().data.currentVersion.id)
+})

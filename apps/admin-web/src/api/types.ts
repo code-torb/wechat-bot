@@ -22,16 +22,20 @@ export type Agent = {
 export type StyleDefinition = {
   id: string
   key: string
+  ownerAgentId: string | null
   enabled: boolean
+  revision: number
   activationGeneration: number
   currentVersion: {
     id: string
+    version: number
     name: string
     description: string
     defaultValue: number
     lowText: string
     midText: string
     highText: string
+    sortOrder: number
   }
 }
 

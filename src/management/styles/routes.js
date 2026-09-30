@@ -10,7 +10,17 @@ function serializeDefinition(repo, row) {
     enabled: Boolean(row.enabled),
     revision: row.revision,
     activationGeneration: row.activation_generation,
-    currentVersion: version,
+    currentVersion: {
+      id: version.id,
+      version: version.version,
+      name: version.name,
+      description: version.description,
+      defaultValue: version.default_value,
+      lowText: version.low_text,
+      midText: version.mid_text,
+      highText: version.high_text,
+      sortOrder: version.sort_order,
+    },
   }
 }
 
@@ -88,15 +98,16 @@ export function registerStyleRoutes(app, { db, styles, service }) {
       return { data: serializeDefinition(styles, updated) }
     }
     try {
+      const currentVersion = styles.currentVersion(definition.id)
       const input = validateStyleDefinition({
         key: definition.key,
-        name: body.name || definition.currentVersion.name,
-        description: body.description ?? definition.currentVersion.description,
-        defaultValue: body.defaultValue ?? definition.currentVersion.default_value,
-        lowText: body.lowText || definition.currentVersion.low_text,
-        midText: body.midText || definition.currentVersion.mid_text,
-        highText: body.highText || definition.currentVersion.high_text,
-        sortOrder: body.sortOrder ?? definition.currentVersion.sort_order,
+        name: body.name ?? currentVersion.name,
+        description: body.description ?? currentVersion.description,
+        defaultValue: body.defaultValue ?? currentVersion.default_value,
+        lowText: body.lowText ?? currentVersion.low_text,
+        midText: body.midText ?? currentVersion.mid_text,
+        highText: body.highText ?? currentVersion.high_text,
+        sortOrder: body.sortOrder ?? currentVersion.sort_order,
       })
       styles.addVersion({ definitionId: definition.id, ...input })
       return { data: serializeDefinition(styles, styles.get(definition.id)) }

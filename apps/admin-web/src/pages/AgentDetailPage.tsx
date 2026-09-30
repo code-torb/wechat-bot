@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Agent, CommandDefinition, Conversation, StyleDefinition } from '../api/types'
+import { styleGuidance } from './styleGuidance'
 
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -87,23 +88,31 @@ export default function AgentDetailPage() {
                   <Form.Item label="对话设定">
                     {styles?.map((style) => {
                       const selected = draft.styleValues.find((item) => item.definitionVersionId === style.currentVersion.id)
+                      const guide = styleGuidance(style)
                       return (
-                        <div key={style.id} style={{ marginBottom: 8 }}>
-                          <span style={{ display: 'inline-block', width: 140 }}>{style.currentVersion.name}</span>
-                          <InputNumber
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={selected?.value ?? style.currentVersion.defaultValue}
-                            onChange={(value) => {
-                              const others = draft.styleValues.filter((item) => item.definitionVersionId !== style.currentVersion.id)
-                              setDraft({
-                                ...draft,
-                                styleValues: [...others, { definitionVersionId: style.currentVersion.id, value: Number(value ?? 0) }],
-                              })
-                            }}
-                          />
-                          <span className="muted" style={{ marginLeft: 8 }}>{style.currentVersion.description}</span>
+                        <div key={style.id} className="agent-style-setting">
+                          <div>
+                            <strong>{style.currentVersion.name}</strong>
+                            <InputNumber
+                              aria-label={`${style.currentVersion.name}程度`}
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              value={selected?.value ?? style.currentVersion.defaultValue}
+                              onChange={(value) => {
+                                const others = draft.styleValues.filter((item) => item.definitionVersionId !== style.currentVersion.id)
+                                setDraft({
+                                  ...draft,
+                                  styleValues: [...others, { definitionVersionId: style.currentVersion.id, value: Number(value ?? 0) }],
+                                })
+                              }}
+                            />
+                          </div>
+                          <small>{guide.description}</small>
+                          <div className="agent-style-endpoints">
+                            <span>0：{guide.lowDetail}</span>
+                            <span>1：{guide.highDetail}</span>
+                          </div>
                         </div>
                       )
                     })}
