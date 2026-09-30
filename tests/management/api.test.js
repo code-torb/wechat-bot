@@ -212,6 +212,54 @@ test('new agents accept prompt and model edits separately before publish', async
   assert.equal(published.statusCode, 200, published.body)
 })
 
+test('one Agent publish request saves the role and selected styles together', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { name: '助手' },
+  })
+  const id = created.json().data.id
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/publish`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {
+      expectedRevision: 1,
+      draft: {
+        prompt: '林安宁曾是一名编辑，如今在上海照顾儿子。',
+        model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+        styleValues: [],
+      },
+    },
+  })
+  assert.equal(response.statusCode, 200, response.body)
+  assert.equal(response.json().data.prompt, '林安宁曾是一名编辑，如今在上海照顾儿子。')
+  const saved = await app.inject({ method: 'GET', url: `/api/v1/agents/${id}`, cookies: { [SESSION_COOKIE]: cookie } })
+  assert.equal(saved.json().data.draft.prompt, response.json().data.prompt)
+  assert.deepEqual(saved.json().data.draft.styleValues, [])
+})
+
+test('default role background is available to an authorized Agent editor', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie } = await login(app)
+  const result = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agents/default-role-background',
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(result.statusCode, 200, result.body)
+  assert.match(result.json().data.background, /林安宁/)
+  assert.match(result.json().data.background, /儿子/)
+})
+
 test('mutations without csrf token are rejected', async (t) => {
   const { app } = await build(t)
   t.after(() => app.close())

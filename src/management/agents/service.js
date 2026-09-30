@@ -207,19 +207,28 @@ export function createAgentService({ db, audit }) {
       })
       return updated
     },
-    publish({ agentId, expectedRevision, actorId }) {
-      const agent = repo.get(agentId)
-      if (!agent) throw new ConflictError('agent not found')
-      if (agent.revision !== expectedRevision) throw new ConflictError('agent was modified by another editor')
-      if (agent.status === 'archived') throw new ValidationError('archived agents cannot be published')
-      const draft = normalizeDraft(JSON.parse(agent.draft_json), { requireComplete: true })
-      validateModelRefs(draft)
-      draft.styleValues = validateStyleRefs(draft.styleValues)
-      draft.pacing = draft.pacing === null ? null : validatePacing(draft.pacing)
-      const now = Date.now()
-      const versionNumber = repo.nextVersion(agentId)
-      const versionId = randomUUID()
+    publish({ agentId, expectedRevision, actorId, draft: inputDraft }) {
       db.transaction(() => {
+        const agent = repo.get(agentId)
+        if (!agent) throw new ConflictError('agent not found')
+        if (agent.revision !== expectedRevision) throw new ConflictError('agent was modified by another editor')
+        if (agent.status === 'archived') throw new ValidationError('archived agents cannot be published')
+        const saved = JSON.parse(agent.draft_json)
+        const draft = normalizeDraft(
+          inputDraft === undefined
+            ? saved
+            : { ...saved, ...inputDraft, model: inputDraft.model ? { ...saved.model, ...inputDraft.model } : saved.model },
+          { requireComplete: true },
+        )
+        validateModelRefs(draft)
+        draft.styleValues = validateStyleRefs(draft.styleValues)
+        draft.pacing = draft.pacing === null ? null : validatePacing(draft.pacing)
+        const now = Date.now()
+        if (inputDraft !== undefined) {
+          repo.updateDraft({ id: agentId, draftJson: JSON.stringify(draft), expectedRevision, now })
+        }
+        const versionNumber = repo.nextVersion(agentId)
+        const versionId = randomUUID()
         repo.insertVersion({
           id: versionId,
           agentId,
@@ -229,16 +238,16 @@ export function createAgentService({ db, audit }) {
           createdAt: now,
         })
         repo.publishPointer({ agentId, versionId, now })
+        audit.record({
+          actorType: 'admin',
+          actorId: actorId || '',
+          action: 'agent.publish',
+          resourceType: 'agents',
+          resourceId: agentId,
+          beforeRevision: expectedRevision,
+          afterRevision: repo.get(agentId).revision,
+        })
       })()
-      audit.record({
-        actorType: 'admin',
-        actorId: actorId || '',
-        action: 'agent.publish',
-        resourceType: 'agents',
-        resourceId: agentId,
-        beforeRevision: expectedRevision,
-        afterRevision: repo.get(agentId).revision,
-      })
       return this.getPublished(agentId)
     },
     getPublished(agentId) {

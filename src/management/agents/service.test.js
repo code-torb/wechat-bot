@@ -50,6 +50,54 @@ test('draft does not change running config until publish', (t) => {
   assert.equal(service.getPublished(agent.id).prompt, '第二版。')
 })
 
+test('one publish saves the edited role and selected styles atomically', (t) => {
+  const { service } = fixture(t)
+  const agent = service.create({ name: '助手' })
+  const published = service.publish({
+    agentId: agent.id,
+    expectedRevision: 1,
+    actorId: 'owner-1',
+    draft: { ...goodDraft, prompt: '林安宁在上海生活，辞职照顾上小学的儿子。', styleValues: [] },
+  })
+  assert.equal(published.prompt, '林安宁在上海生活，辞职照顾上小学的儿子。')
+  assert.deepEqual(published.styleValues, [])
+  const saved = service.get(agent.id)
+  assert.equal(JSON.parse(saved.draft_json).prompt, published.prompt)
+  assert.equal(saved.revision, 3)
+  assert.equal(service.versions(agent.id).length, 1)
+
+  assert.throws(
+    () =>
+      service.publish({
+        agentId: agent.id,
+        expectedRevision: saved.revision,
+        actorId: 'owner-1',
+        draft: { prompt: '另一个背景', styleValues: [{ definitionId: 'missing', definitionVersionId: 'missing', value: 0.5 }] },
+      }),
+    ValidationError,
+  )
+  assert.equal(service.get(agent.id).revision, saved.revision)
+  assert.equal(JSON.parse(service.get(agent.id).draft_json).prompt, published.prompt)
+  assert.equal(service.versions(agent.id).length, 1)
+  assert.throws(() => service.publish({ agentId: agent.id, expectedRevision: 1, actorId: 'owner-1', draft: { prompt: '过期修改' } }), ConflictError)
+})
+
+test('a failed version insert leaves the edited role unpublished and unsaved', (t) => {
+  const { db, service } = fixture(t)
+  const agent = service.create({ name: '助手' })
+  service.updateDraft({ agentId: agent.id, draft: goodDraft, expectedRevision: 1, actorId: 'owner-1' })
+  db.exec("CREATE TRIGGER reject_agent_version BEFORE INSERT ON agent_versions BEGIN SELECT RAISE(ABORT, 'version insert failed'); END")
+  assert.throws(
+    () => service.publish({ agentId: agent.id, expectedRevision: 2, actorId: 'owner-1', draft: { prompt: '新的人物背景。' } }),
+    /version insert failed/,
+  )
+  const current = service.get(agent.id)
+  assert.equal(current.revision, 2)
+  assert.equal(JSON.parse(current.draft_json).prompt, goodDraft.prompt)
+  assert.equal(service.getPublished(agent.id), null)
+  assert.equal(service.versions(agent.id).length, 0)
+})
+
 test('concurrent edits allow only one winner', (t) => {
   const { service } = fixture(t)
   const agent = service.create({ name: '助手' })

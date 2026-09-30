@@ -4,6 +4,7 @@ import { createApp } from './app.js'
 import { SessionStore } from './auth/sessions.js'
 import { SecretStore } from './secrets/store.js'
 import { createAgentService } from './agents/service.js'
+import { upgradeUntouchedDefaultRole } from './agents/default-role.js'
 import { createAuditStore } from './audit/store.js'
 import { createStyleRepository } from './styles/repository.js'
 import { createQQRuleRepository } from './qq/rules.js'
@@ -40,6 +41,7 @@ const secretStore = process.env.MANAGEMENT_KEY_FILE
   : null
 const audit = createAuditStore(db)
 const service = createAgentService({ db, audit })
+upgradeUntouchedDefaultRole({ db, service })
 const styles = createStyleRepository(db)
 const qqRules = createQQRuleRepository(db)
 const qqRouter = createQQRouter({ db, service })

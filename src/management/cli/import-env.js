@@ -10,6 +10,7 @@ import { createAgentService } from '../agents/service.js'
 import { createAuditStore } from '../audit/store.js'
 import { createQQRuleRepository } from '../qq/rules.js'
 import { createStyleRepository } from '../styles/repository.js'
+import { DEFAULT_ROLE_BACKGROUND } from '../agents/default-role.js'
 
 const DEFAULT_STYLE_PRESETS = [
   {
@@ -32,14 +33,7 @@ function sourceHash(content) {
   return createHash('sha256').update(content).digest('hex')
 }
 
-function readPrompt(env, promptRoot) {
-  const file = env.CHAT_SYSTEM_PROMPT_FILE
-  if (!file) return env.CHAT_SYSTEM_PROMPT || '你是一个友好、简洁的中文聊天助手。请用纯文本回答，避免过长的回复。'
-  const path = file.startsWith('.') || !file.startsWith('/') ? resolve(promptRoot, file) : file
-  return readFileSync(path, 'utf8').trim()
-}
-
-export async function importLegacyConfig({ db, envFile, promptRoot = process.cwd(), secretKeyPath, dryRun = false }) {
+export async function importLegacyConfig({ db, envFile, secretKeyPath, dryRun = false }) {
   const content = readFileSync(envFile, 'utf8')
   const env = dotenv.parse(content)
   const hash = sourceHash(content)
@@ -84,7 +78,7 @@ export async function importLegacyConfig({ db, envFile, promptRoot = process.cwd
       agentId: agent.id,
       draft: {
         name: '默认 Agent',
-        prompt: readPrompt(env, promptRoot),
+        prompt: DEFAULT_ROLE_BACKGROUND,
         model: { providerId, credentialRef: credentialId, name: env.CHAT_MODEL || '', supportsTools: false },
         pacing: {
           baseDelayMs: Number(env.CHAT_REPLY_DELAY_MS || 0),
@@ -149,7 +143,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   const result = await importLegacyConfig({
     db,
     envFile: process.argv[2] || '.env',
-    promptRoot: process.cwd(),
     secretKeyPath: process.env.MANAGEMENT_KEY_FILE,
     dryRun: process.argv.includes('--dry-run'),
   })

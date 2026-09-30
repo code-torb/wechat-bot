@@ -1,5 +1,6 @@
 import { requireCapability } from '../auth/authorization.js'
 import { ValidationError } from './repository.js'
+import { DEFAULT_ROLE_BACKGROUND } from './default-role.js'
 
 const listAgentsSchema = {
   querystring: {
@@ -103,6 +104,12 @@ export function registerAgentRoutes(app, { service }) {
     },
   )
 
+  app.get('/api/v1/agents/default-role-background', async (request, reply) => {
+    await requireCapability({ resourceType: 'agents', operation: 'read:agents' })(request, reply)
+    if (reply.sent) return
+    return { data: { background: DEFAULT_ROLE_BACKGROUND } }
+  })
+
   app.get('/api/v1/agents/:id', async (request, reply) => {
     await requireCapability({ resourceType: 'agents', resourceId: request.params.id, operation: 'read:agents' })(request, reply)
     if (reply.sent) return
@@ -136,7 +143,13 @@ export function registerAgentRoutes(app, { service }) {
   app.post(
     '/api/v1/agents/:id/publish',
     {
-      schema: { body: { type: 'object', additionalProperties: false, properties: { expectedRevision: { type: 'integer' } } } },
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { expectedRevision: { type: 'integer' }, draft: agentMutationSchema.body },
+        },
+      },
     },
     async (request, reply) => {
       await requireCapability({ resourceType: 'agents', resourceId: request.params.id, operation: 'write:agents' })(request, reply)
@@ -145,9 +158,15 @@ export function registerAgentRoutes(app, { service }) {
       if (!current) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'agent not found' } })
       const expectedRevision = request.body?.expectedRevision ?? Number(request.headers['if-match'])
       try {
-        const published = service.publish({ agentId: request.params.id, expectedRevision, actorId: request.auth.user.userId })
+        const published = service.publish({
+          agentId: request.params.id,
+          expectedRevision,
+          actorId: request.auth.user.userId,
+          draft: request.body?.draft,
+        })
         return { data: published }
       } catch (error) {
+        if (error.code !== 'CONFLICT' && !(error instanceof ValidationError)) throw error
         const status = error.code === 'CONFLICT' ? 409 : 422
         return reply.code(status).send({ error: { code: error.code || 'VALIDATION', message: error.message } })
       }
