@@ -62,6 +62,13 @@ docker compose -f compose.qq.yaml --profile management up -d --build management 
 docker compose -f compose.qq.yaml --profile management logs -f management
 ```
 
+管理端依赖阶段使用带编译工具的 Node 镜像，跳过无关的 Puppeteer 浏览器下载；运行阶段仍使用 slim 镜像。首次构建需要拉取构建镜像和安装 npm 依赖；后续只修改 `src` 或前端源码时，依赖层会命中 Docker 缓存。重新构建时可以用以下命令查看每一步的耗时：
+
+```sh
+docker compose --progress plain -f compose.qq.yaml --profile management build management
+docker compose -f compose.qq.yaml --profile management up -d --no-build management
+```
+
 首次启动后创建管理员并导入旧配置：
 
 ```sh
