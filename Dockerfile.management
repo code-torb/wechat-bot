@@ -22,6 +22,7 @@ COPY cli.js ./
 COPY src ./src
 COPY --from=web /src/dist ./admin-dist
 RUN useradd --uid 10001 --system mgmt
+RUN mkdir -p /app/data && chown -R mgmt:mgmt /app/data
 USER mgmt
 ENV MANAGEMENT_DIST=/app/admin-dist
 EXPOSE 6080

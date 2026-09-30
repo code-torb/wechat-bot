@@ -93,11 +93,11 @@ services:
     restart: unless-stopped
     network_mode: none
     volumes:
-      - executor-socket:/run
+      - executor-socket:/executor-io
       - executor-journal:/var/lib/file-executor
       - ./resources:/resources:rw
     environment:
-      EXECUTOR_SOCKET: /run/executor.sock
+      EXECUTOR_SOCKET: /executor-io/executor.sock
       EXECUTOR_SECRET: '${FILE_EXECUTOR_SECRET:-}'
       EXECUTOR_JOURNAL: /var/lib/file-executor/journal.jsonl
       RESOURCE_MANIFEST: '${RESOURCE_MANIFEST:-notes=/resources/notes}'

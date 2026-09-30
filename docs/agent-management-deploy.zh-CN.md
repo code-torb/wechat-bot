@@ -12,6 +12,26 @@ openssl rand -hex 32 > .executor-secret
 
 `master.key` 用于加密模型/搜索 API Key，丢失后已存凭据无法解密；`executor-secret` 用于文件执行器请求签名，两者不要相同。`resources/notes` 是默认允许 Agent 读写的工作目录，只挂载你明确授权的目录。
 
+容器以 uid 10001 运行（management 用户 `mgmt`、执行器用户 `executor`）。数据卷会自动继承镜像目录权限；**bind 挂载的 `resources` 目录需要把写权限交给 uid 10001**：
+
+```sh
+sudo chown -R 10001:10001 resources
+```
+
+升级前创建过的 `management-data` 卷如果仍由 root 持有，数据库无法创建，会出现 `SQLITE_CANTOPEN`。没有需要保留的数据时直接重建卷：
+
+```sh
+sudo docker compose -f compose.qq.yaml --profile management down
+sudo docker volume ls | grep management-data
+sudo docker volume rm <上一步查到的卷名>
+```
+
+之后重新 `up -d --build management` 即可。若已有重要数据，改用容器内 chown：
+
+```sh
+sudo docker compose -f compose.qq.yaml --profile management run --rm --user root management chown -R 10001:10001 /app/data
+```
+
 ## 2. 配置 .env
 
 在 `.env` 中确认或补充：
