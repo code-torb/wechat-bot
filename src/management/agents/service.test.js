@@ -59,7 +59,7 @@ test('one publish saves the edited role and selected styles atomically', (t) => 
   assert.deepEqual(published.styleValues, [])
   const saved = service.get(agent.id)
   assert.equal(JSON.parse(saved.draft_json).prompt, published.prompt)
-  assert.equal(saved.revision, 3)
+  assert.equal(saved.revision, 2)
   assert.equal(service.versions(agent.id).length, 1)
 
   assert.throws(

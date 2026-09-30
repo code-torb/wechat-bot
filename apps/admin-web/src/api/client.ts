@@ -3,6 +3,20 @@ import { message } from 'antd'
 export type ApiResult<T> = { code: number | string; message: string; data: T; meta?: { nextCursor?: string | null } }
 
 let csrfToken = ''
+let toastFn: ((type: 'success' | 'error', content: string) => void) | null = null
+
+export function setToast(fn: (type: 'success' | 'error', content: string) => void) {
+  toastFn = fn
+}
+
+function showToast(type: 'success' | 'error', content: string) {
+  if (toastFn) {
+    toastFn(type, content)
+    return
+  }
+  if (type === 'success') message.success(content)
+  else message.error(content)
+}
 
 export class ApiError extends Error {
   constructor(
@@ -39,12 +53,12 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<Ap
   const code = payload?.code ?? payload?.error?.code
   const messageText = payload?.message ?? payload?.error?.message
   if (!response.ok) {
-    message.error(messageText || `request failed (${response.status})`)
+    showToast('error', messageText || `request failed (${response.status})`)
     throw new ApiError(code || 'REQUEST_FAILED', messageText || `request failed (${response.status})`, response.status)
   }
   const method = (options.method || 'GET').toUpperCase()
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && payload?.message) {
-    message.success(payload.message)
+    showToast('success', payload.message)
   }
   return { data: payload?.data, meta: payload?.meta } as ApiResult<T>
 }

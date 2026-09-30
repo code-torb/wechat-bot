@@ -11,7 +11,7 @@ import {
   AuditOutlined,
 } from '@ant-design/icons'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { api, setCsrf } from './api/client'
+import { api, setCsrf, setToast } from './api/client'
 import LoginPage from './pages/LoginPage'
 import AgentsPage from './pages/AgentsPage'
 import AgentDetailPage from './pages/AgentDetailPage'
@@ -45,6 +45,12 @@ function Shell() {
   const navigate = useNavigate()
   const [messageApi, contextHolder] = message.useMessage()
   const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    setToast((type, content) => {
+      if (type === 'success') messageApi.success(content)
+      else messageApi.error(content)
+    })
+  }, [messageApi])
   if (user === 'loading') return <Spin style={{ display: 'block', margin: '80px auto' }} />
   if (!user) return <LoginPage onLogin={(csrf) => setCsrf(csrf)} onSuccess={() => window.location.reload()} />
   const items = [

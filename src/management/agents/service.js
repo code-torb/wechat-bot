@@ -243,7 +243,10 @@ export function createAgentService({ db, audit }) {
         draft.pacing = draft.pacing === null ? null : validatePacing(draft.pacing)
         const now = Date.now()
         if (inputDraft !== undefined) {
-          repo.updateDraft({ id: agentId, draftJson: JSON.stringify(draft), expectedRevision, now })
+          const result = db
+            .prepare('UPDATE agents SET draft_json = ?, updated_at = ? WHERE id = ? AND revision = ?')
+            .run(JSON.stringify(draft), now, agentId, expectedRevision)
+          if (result.changes !== 1) throw new ConflictError('agent was modified by another editor')
         }
         const versionNumber = repo.nextVersion(agentId)
         const versionId = randomUUID()
