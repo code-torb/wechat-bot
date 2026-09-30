@@ -17,16 +17,17 @@ function defaultDraft() {
   }
 }
 
-function normalizeDraft(input) {
+function normalizeDraft(input, { requireComplete = false } = {}) {
   const base = defaultDraft()
   const draft = { ...base, ...(input || {}) }
   if (typeof draft.name !== 'string' || !draft.name.trim()) throw new ValidationError('agent name is required')
-  if (typeof draft.prompt !== 'string' || !draft.prompt.trim()) throw new ValidationError('agent prompt is required')
-  if (!draft.model || typeof draft.model.providerId !== 'string' || !draft.model.providerId) {
+  if (typeof draft.prompt !== 'string' || (requireComplete && !draft.prompt.trim())) throw new ValidationError('agent prompt is required')
+  if (!draft.model || typeof draft.model.providerId !== 'string' || (requireComplete && !draft.model.providerId)) {
     throw new ValidationError('agent model provider is required')
   }
-  if (!draft.model.credentialRef || typeof draft.model.credentialRef !== 'string') throw new ValidationError('agent model credential is required')
-  if (!draft.model.name || typeof draft.model.name !== 'string') throw new ValidationError('agent model name is required')
+  if (typeof draft.model.credentialRef !== 'string' || (requireComplete && !draft.model.credentialRef))
+    throw new ValidationError('agent model credential is required')
+  if (typeof draft.model.name !== 'string' || (requireComplete && !draft.model.name)) throw new ValidationError('agent model name is required')
   if (!Array.isArray(draft.styleValues)) throw new ValidationError('styleValues must be an array')
   if (!Array.isArray(draft.capabilities)) throw new ValidationError('capabilities must be an array')
   return {
@@ -136,7 +137,12 @@ export function createAgentService({ db, audit }) {
     updateDraft({ agentId, draft, expectedRevision, actorId }) {
       const current = repo.get(agentId)
       if (!current) throw new ConflictError('agent not found')
-      const normalized = normalizeDraft(draft)
+      const saved = JSON.parse(current.draft_json)
+      const normalized = normalizeDraft({
+        ...saved,
+        ...draft,
+        model: draft?.model ? { ...saved.model, ...draft.model } : saved.model,
+      })
       const updated = repo.updateDraft({ id: agentId, draftJson: JSON.stringify(normalized), expectedRevision, now: Date.now() })
       audit.record({
         actorType: 'admin',
@@ -206,7 +212,7 @@ export function createAgentService({ db, audit }) {
       if (!agent) throw new ConflictError('agent not found')
       if (agent.revision !== expectedRevision) throw new ConflictError('agent was modified by another editor')
       if (agent.status === 'archived') throw new ValidationError('archived agents cannot be published')
-      const draft = normalizeDraft(JSON.parse(agent.draft_json))
+      const draft = normalizeDraft(JSON.parse(agent.draft_json), { requireComplete: true })
       validateModelRefs(draft)
       draft.styleValues = validateStyleRefs(draft.styleValues)
       draft.pacing = draft.pacing === null ? null : validatePacing(draft.pacing)

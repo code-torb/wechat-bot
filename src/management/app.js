@@ -62,6 +62,16 @@ export async function createApp({ db, clock = Date.now, sessions, logger = true 
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error }, 'request failed')
+    if (error.validation?.length) {
+      const issue = error.validation[0]
+      const field =
+        issue.instancePath?.replace(/^\//, '').replaceAll('/', '.') ||
+        issue.params?.missingProperty ||
+        issue.params?.additionalProperty ||
+        error.validationContext ||
+        '请求参数'
+      return reply.status(400).send({ error: { code: 'VALIDATION', message: `字段 ${field} 无效：${issue.message || '请检查输入'}` } })
+    }
     const code = error.code && /^[A-Z0-9_]+$/.test(error.code) ? error.code : 'INTERNAL'
     const statusCode = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500
     reply.status(statusCode).send({ error: { code, message: error.exposeMessage || 'request failed' } })

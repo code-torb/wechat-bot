@@ -121,6 +121,97 @@ test('full agent API flow: create, publish, rollback and audit', async (t) => {
   assert.equal(actions.includes('agent.rollback'), true)
 })
 
+test('agent creation returns a useful error for an empty name', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
+    payload: { name: '' },
+  })
+  assert.equal(response.statusCode, 422)
+  assert.deepEqual(response.json().error, { code: 'VALIDATION', message: 'agent name is required' })
+  const missing = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { 'content-type': 'application/json', 'x-csrf-token': csrf },
+    payload: {},
+  })
+  assert.equal(missing.statusCode, 400)
+  assert.equal(missing.json().error.code, 'VALIDATION')
+  assert.match(missing.json().error.message, /name/)
+})
+
+test('invalid Agent request fields identify the failing field instead of Fastify internals', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie } = await login(app)
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agents?status=inactive',
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(response.statusCode, 400)
+  assert.equal(response.json().error.code, 'VALIDATION')
+  assert.match(response.json().error.message, /status/)
+})
+
+test('new agents accept prompt and model edits separately before publish', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { name: '助手' },
+  })
+  assert.equal(created.statusCode, 201)
+  const id = created.json().data.id
+  const listed = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(listed.statusCode, 200)
+  assert.equal(
+    listed.json().data.some((agent) => agent.id === id),
+    true,
+  )
+  const prompt = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/agents/${id}`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { ...headers, 'if-match': '1' },
+    payload: { prompt: '你是一个测试助手。' },
+  })
+  assert.equal(prompt.statusCode, 200, prompt.body)
+  const model = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/agents/${id}`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { ...headers, 'if-match': '2' },
+    payload: { model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false } },
+  })
+  assert.equal(model.statusCode, 200, model.body)
+  assert.equal(model.json().data.draft.name, '助手')
+  assert.equal(model.json().data.draft.prompt, '你是一个测试助手。')
+  const published = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/publish`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { expectedRevision: 3 },
+  })
+  assert.equal(published.statusCode, 200, published.body)
+})
+
 test('mutations without csrf token are rejected', async (t) => {
   const { app } = await build(t)
   t.after(() => app.close())

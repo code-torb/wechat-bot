@@ -8,7 +8,7 @@ export type Agent = {
   draft: {
     prompt: string
     model: { providerId: string; credentialRef: string; name: string; supportsTools: boolean }
-    styleValues: { definitionVersionId: string; value: number }[]
+    styleValues: { definitionId: string; definitionVersionId: string; value: number }[]
     pacing: { baseDelayMs: number; charsPerSecond: number; maxDelayMs: number } | null
     capabilities: string[]
     searchMode: 'off' | 'command' | 'auto'

@@ -36,3 +36,26 @@ it('restores csrf from an existing session before enabling mutations', async () 
   const mutation = requests.find((request) => request.path === '/api/v1/agents' && request.init?.method === 'POST')
   expect(mutation?.init?.headers).toMatchObject({ 'x-csrf-token': 'restored-token' })
 })
+
+it('does not submit an Agent with an empty or whitespace-only name', async () => {
+  const requests: { path: string; init?: RequestInit }[] = []
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const path = String(input)
+    requests.push({ path, init })
+    if (path === '/api/v1/auth/me') {
+      return { ok: true, json: async () => ({ data: { username: 'owner', role: 'owner', csrf: 'restored-token' } }) } as Response
+    }
+    return { ok: true, json: async () => ({ data: [] }) } as Response
+  })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={['/agents']}><App /></MemoryRouter>
+    </QueryClientProvider>,
+  )
+  const input = await screen.findByPlaceholderText('名称')
+  const create = screen.getByRole('button', { name: '新建 Agent' })
+  expect(create).toBeDisabled()
+  fireEvent.change(input, { target: { value: '   ' } })
+  expect(create).toBeDisabled()
+  expect(requests.filter(({ path, init }) => path === '/api/v1/agents' && init?.method === 'POST')).toHaveLength(0)
+})

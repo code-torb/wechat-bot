@@ -1,4 +1,5 @@
 import { requireCapability } from '../auth/authorization.js'
+import { ValidationError } from './repository.js'
 
 const listAgentsSchema = {
   querystring: {
@@ -83,16 +84,22 @@ export function registerAgentRoutes(app, { service }) {
       schema: {
         body: {
           type: 'object',
+          required: ['name'],
           additionalProperties: false,
-          properties: { name: { type: 'string', minLength: 1 }, description: { type: 'string' } },
+          properties: { name: { type: 'string' }, description: { type: 'string' } },
         },
       },
     },
     async (request, reply) => {
       await requireCapability({ resourceType: 'agents', operation: 'write:agents' })(request, reply)
       if (reply.sent) return
-      const agent = service.create({ name: request.body.name, description: request.body.description || '', actorId: request.auth.user.userId })
-      return reply.code(201).send({ data: serialize(agent) })
+      try {
+        const agent = service.create({ name: request.body.name, description: request.body.description || '', actorId: request.auth.user.userId })
+        return reply.code(201).send({ data: serialize(agent) })
+      } catch (error) {
+        if (!(error instanceof ValidationError)) throw error
+        return reply.code(422).send({ error: { code: error.code, message: error.message } })
+      }
     },
   )
 

@@ -29,7 +29,9 @@ export function createModelClient({ secretStore }) {
           arguments: JSON.parse(call.function?.arguments || '{}'),
         }))
       : []
-    const usage = response?.usage ? { inputTokens: usage.prompt_tokens ?? null, outputTokens: usage.completion_tokens ?? null } : null
+    const usage = response?.usage
+      ? { inputTokens: response.usage.prompt_tokens ?? null, outputTokens: response.usage.completion_tokens ?? null }
+      : null
     return { text, toolCalls, usage }
   }
 }

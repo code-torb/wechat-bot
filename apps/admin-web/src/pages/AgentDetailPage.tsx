@@ -87,23 +87,23 @@ export default function AgentDetailPage() {
                   </Form.Item>
                   <Form.Item label="对话设定">
                     {styles?.map((style) => {
-                      const selected = draft.styleValues.find((item) => item.definitionVersionId === style.currentVersion.id)
+                      const selected = draft.styleValues.find((item) => item.definitionId === style.id)
                       const guide = styleGuidance(style)
                       return (
                         <div key={style.id} className="agent-style-setting">
                           <div>
                             <strong>{style.currentVersion.name}</strong>
                             <InputNumber
-                              aria-label={`${style.currentVersion.name}程度`}
+                              aria-label={`${style.currentVersion.name}取值`}
                               min={0}
                               max={1}
                               step={0.01}
                               value={selected?.value ?? style.currentVersion.defaultValue}
                               onChange={(value) => {
-                                const others = draft.styleValues.filter((item) => item.definitionVersionId !== style.currentVersion.id)
+                                const others = draft.styleValues.filter((item) => item.definitionId !== style.id)
                                 setDraft({
                                   ...draft,
-                                  styleValues: [...others, { definitionVersionId: style.currentVersion.id, value: Number(value ?? 0) }],
+                                  styleValues: [...others, { definitionId: style.id, definitionVersionId: style.currentVersion.id, value: Number(value ?? 0) }],
                                 })
                               }}
                             />

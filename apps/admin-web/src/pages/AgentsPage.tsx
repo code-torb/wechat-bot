@@ -15,7 +15,7 @@ export default function AgentsPage() {
   })
   const create = useMutation({
     mutationFn: async () => {
-      const result = await api<Agent>('/api/v1/agents', { method: 'POST', body: { name } })
+      const result = await api<Agent>('/api/v1/agents', { method: 'POST', body: { name: name.trim() } })
       return result.data
     },
     onSuccess: (result) => {
@@ -29,7 +29,7 @@ export default function AgentsPage() {
     <div className="page">
       <Space style={{ marginBottom: 12 }}>
         <Input placeholder="名称" value={name} onChange={(event) => setName(event.target.value)} />
-        <Button type="primary" onClick={() => create.mutate()}>新建 Agent</Button>
+        <Button type="primary" disabled={!name.trim()} loading={create.isPending} onClick={() => create.mutate()}>新建 Agent</Button>
       </Space>
       <Table<Agent>
         rowKey="id"

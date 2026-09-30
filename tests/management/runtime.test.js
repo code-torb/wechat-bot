@@ -17,6 +17,7 @@ import { createPolicyEngine } from '../../src/management/permissions/policy.js'
 import { createCommandRegistry } from '../../src/management/commands/registry.js'
 import { renderReply } from '../../src/platforms/onebot/render.js'
 import { SecretStore } from '../../src/management/secrets/store.js'
+import { createModelClient } from '../../src/chat/model-client.js'
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'runtime-test-'))
@@ -64,7 +65,7 @@ function fixture(t) {
       calls.push({ action, params })
     },
   }
-  return { db, service, router, conversations, plans, client, calls, agent }
+  return { db, service, router, conversations, plans, client, calls, agent, secretStore }
 }
 
 test('full runtime flow sends a paced reply and stores the delivered turn', async (t) => {
@@ -113,6 +114,192 @@ test('full runtime flow sends a paced reply and stores the delivered turn', asyn
   assert.equal(calls[0].params.message[0].data.text, '模型回复')
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE delivery_status = 'sent'").get().count, 2)
   assert.equal(db.prepare('SELECT status FROM runs WHERE id = ?').get(db.prepare('SELECT id FROM runs LIMIT 1').get().id).status, 'sent')
+})
+
+test('runtime passes the published Agent model name to the model client', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let queuedTask
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: { schedule() {} },
+    complete: async ({ provider }) => {
+      assert.equal(provider.modelName, 'test-model')
+      return { text: '模型回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  const result = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'model-name',
+    text: '你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  assert.equal(result.status, 'queued')
+  await queuedTask()
+})
+
+test('QQ message reaches the model client and sends its reply with token usage', async (t) => {
+  const { db, router, conversations, plans, client, calls, secretStore } = fixture(t)
+  const policyEngine = createPolicyEngine({ db })
+  const scheduler = createReplyScheduler({ db, plans, conversations, client, renderReply, policyEngine, router, intervalMs: 5 })
+  scheduler.start()
+  t.after(() => scheduler.stop())
+  let requestBody
+  const modelClient = createModelClient({ secretStore })
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine,
+    scheduler,
+    complete: (args) =>
+      modelClient({
+        ...args,
+        transport: async (_url, options) => {
+          requestBody = JSON.parse(options.body)
+          return new Response(
+            JSON.stringify({
+              id: 'model-reply',
+              object: 'chat.completion',
+              choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '你好！' } }],
+              usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        },
+      }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    sessionQueue: createSessionQueue(),
+  })
+  const result = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'full-model',
+    text: '你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  assert.equal(result.status, 'queued')
+  const deadline = Date.now() + 3000
+  while (calls.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(calls[0]?.params.message[0].data.text, '你好！')
+  assert.equal(requestBody.model, 'test-model')
+})
+
+test('model failures are recorded and logged instead of leaving a queued run', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let queuedTask
+  const errors = []
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: { schedule() {} },
+    complete: async () => {
+      throw new Error('provider unavailable')
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+    logger: { error: (...args) => errors.push(args) },
+  })
+  const accepted = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'model-failure',
+    text: '你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  const run = db.prepare('SELECT status, error_code FROM runs WHERE id = ?').get(accepted.runId)
+  assert.deepEqual(run, { status: 'failed', error_code: 'AGENT_TURN_FAILED' })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0][1], /Agent 回复生成失败/)
+})
+
+test('model-task commands call the same configured model as ordinary chat', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let queuedTask
+  let scheduled
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: {
+      match: () => ({ executionType: 'model_task', args: ['你好'], capabilities: [], steps: [{ template: '解释 {args}' }] }),
+      definitions: () => [],
+    },
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        scheduled = plan
+      },
+    },
+    complete: async ({ provider, messages }) => {
+      assert.equal(provider.modelName, 'test-model')
+      assert.equal(messages.at(-1).content, '解释 你好')
+      return { text: '模型任务回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+    logger: { error() {} },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'model-task',
+    text: '/explain 你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.equal(scheduled?.reply.text, '模型任务回复')
 })
 
 test('/reset cancels the pending reply and answers immediately', async (t) => {
