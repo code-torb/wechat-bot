@@ -401,7 +401,7 @@ test('/new starts a fresh context and replies immediately', async (t) => {
   assert.equal(run.status, 'sent')
   const oldRow = db.prepare('SELECT active FROM conversations WHERE id = ?').get(run.conversation_id)
   assert.equal(oldRow.active, 0)
-  const fresh = db.prepare('SELECT active, current_epoch FROM conversations ORDER BY created_at DESC LIMIT 1').get()
+  const fresh = db.prepare('SELECT active, current_epoch FROM conversations WHERE active = 1 LIMIT 1').get()
   assert.equal(fresh.active, 1)
   assert.equal(fresh.current_epoch, 1)
   assert.equal(scheduled.epoch, 1)

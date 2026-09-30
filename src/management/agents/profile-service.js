@@ -409,7 +409,7 @@ export function createAgentProfileService({ db, service, audit, complete, getMod
             { role: 'system', content: '你是小说人物提炼器，只输出 JSON，不输出其他内容。' },
             {
               role: 'user',
-              content: `以下是小说原文开头：\n${text.slice(0, 10000)}\n\n请提炼小说人物“${chosen}”的角色卡，输出 JSON：{"name":"姓名","birthDate":"出生日期或空","gender":"性别或空","occupation":"职业或空","hobbies":"爱好或空","background":"300字左右的人物经历故事，使用第三人称"}。姓名必须与原文一致。`,
+              content: `以下是小说原文开头：\n${text.slice(0, 30000)}\n\n请提炼小说人物“${chosen}”的角色卡，输出 JSON：{"name":"姓名","birthDate":"出生日期或空","gender":"性别或空","occupation":"职业或空","hobbies":"爱好或空","background":"按时间顺序串联该人物在小说中的一系列重要经历与事件，800-1500字，包含起因、经过与结果，使用第三人称"}。姓名必须与原文一致。`,
             },
           ])
           const parsedCard = parseCharacterCardJson(result?.text)

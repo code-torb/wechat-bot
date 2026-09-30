@@ -251,7 +251,8 @@ test('createFromStory distills the chosen character, stores the story and builds
             gender: '女',
             occupation: '编辑',
             hobbies: '读书',
-            background: '她曾做图书编辑，婚后辞职在家照顾儿子。',
+            background:
+              '她曾做图书编辑，婚后辞职在家照顾儿子。后来在社区图书馆认识纪录片摄影师陈屿，两人发生婚外感情；事情传开后与丈夫周叙分居，靠校对零活维持开销，并开始重新找工作。',
           }),
           toolCalls: [],
         }
@@ -280,6 +281,7 @@ test('createFromStory distills the chosen character, stores the story and builds
   assert.equal(draft.attributes.name, '林安宁')
   assert.equal(draft.attributes.occupation, '编辑')
   assert.match(draft.prompt, /图书编辑/)
+  assert.match(draft.prompt, /周叙/)
   const docs = db.prepare('SELECT title FROM agent_knowledge_docs WHERE agent_id = ?').all(agent.id)
   assert.ok(docs.length >= 1)
   assert.equal(docs[0].title, '林安宁')

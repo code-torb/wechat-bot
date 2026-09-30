@@ -96,7 +96,7 @@ export function parseStoryText(text) {
     .replace(/[\r\n]+/g, '\n')
     .replace(/[ \t]+/g, ' ')
     .trim()
-  const background = clean.length > 1200 ? `${clean.slice(0, 1200)}\n\n（以上为小说原文节选，请结合原文继续完善人物经历。）` : clean
+  const background = clean.length > 2500 ? `${clean.slice(0, 2500)}\n\n（以上为小说原文节选，请结合原文继续完善人物经历。）` : clean
   return {
     name: findName(clean, ''),
     birthDate: findBirthDate(clean),
