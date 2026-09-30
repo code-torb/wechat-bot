@@ -1,6 +1,7 @@
 const DEFAULT_SYSTEM_PROMPT = '你是一个友好、简洁的中文聊天助手。'
-const HELP_REPLY = '用法：直接发送消息开始聊天；发送 /reset 清除上下文；发送 /help 查看帮助。'
+const HELP_REPLY = '用法：直接发送消息开始聊天；发送 /new 开启一轮新的对话；发送 /reset 清除上下文；发送 /help 查看帮助。'
 const RESET_REPLY = '已重置这段对话。'
+const NEW_CHAT_REPLY = '好的，已开启一轮新的对话。'
 const SESSION_BUSY_REPLY = '我正在回复你上一条消息，请稍等一下。'
 const GLOBAL_BUSY_REPLY = '现在有点忙，请稍后再试。'
 const COOLDOWN_REPLY = '你发送得太快了，请稍后再试。'
@@ -149,6 +150,12 @@ export function createChatCore({
       sessions.delete(key)
       enforceCapacity()
       return RESET_REPLY
+    }
+
+    if (text === '/new' || text === '/newchat' || text === '/新对话' || text === '/开始新对话') {
+      sessions.delete(key)
+      enforceCapacity()
+      return NEW_CHAT_REPLY
     }
 
     if (text.length > inputLimit) {

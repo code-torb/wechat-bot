@@ -360,3 +360,92 @@ test('/reset cancels the pending reply and answers immediately', async (t) => {
   assert.equal(calls.length, 1)
   assert.equal(calls[0].params.message[0].data.text, '已重置这段对话。')
 })
+
+test('/new starts a fresh context and replies immediately', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let queuedTask
+  let scheduled
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        scheduled = plan
+      },
+      cancelForConversation: () => {},
+    },
+    complete: async () => ({ text: '旧回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  const accepted = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'new-1',
+    text: '/新对话',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  assert.equal(accepted.status, 'queued')
+  await queuedTask()
+  assert.equal(scheduled.reply.text, '好的，已开启一轮新的对话。')
+  const run = db.prepare('SELECT status, conversation_id FROM runs WHERE id = ?').get(accepted.runId)
+  assert.equal(run.status, 'sent')
+  const conversation = db.prepare('SELECT current_epoch FROM conversations WHERE id = ?').get(run.conversation_id)
+  assert.equal(conversation.current_epoch, 2)
+  assert.equal(scheduled.epoch, conversation.current_epoch)
+})
+
+test('/help lists the built-in new chat command', async (t) => {
+  const { db, router, conversations } = fixture(t)
+  let queuedTask
+  let scheduled
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        scheduled = plan
+      },
+      cancelForConversation: () => {},
+    },
+    complete: async () => ({ text: '', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  const accepted = await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'help-1',
+    text: '/help',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.match(scheduled.reply.text, /\/new - 开启一轮新的对话/)
+  assert.match(scheduled.reply.text, /\/reset - 清除当前会话上下文/)
+})

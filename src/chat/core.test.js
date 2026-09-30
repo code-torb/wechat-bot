@@ -156,6 +156,33 @@ test('reset clears only the current session', async () => {
   ])
 })
 
+test('new chat clears only the current session', async () => {
+  const calls = []
+  const core = createChatCore({
+    cooldownMs: 0,
+    complete: async (messages) => {
+      calls.push(messages)
+      return `回复 ${calls.length}`
+    },
+  })
+
+  await core.handle(message({ userId: 'user-a', text: 'A1' }))
+  await core.handle(message({ userId: 'user-b', text: 'B1' }))
+  assert.match(await core.handle(message({ userId: 'user-a', text: '/新对话' })), /开启一轮新的对话/)
+  await core.handle(message({ userId: 'user-a', text: 'A2' }))
+  await core.handle(message({ userId: 'user-b', text: 'B2' }))
+
+  assert.deepEqual(calls[2], [
+    { role: 'system', content: '你是一个友好、简洁的中文聊天助手。' },
+    { role: 'user', content: 'A2' },
+  ])
+  assert.deepEqual(calls[3].slice(1), [
+    { role: 'user', content: 'B1' },
+    { role: 'assistant', content: '回复 2' },
+    { role: 'user', content: 'B2' },
+  ])
+})
+
 test('failed completions leave history unchanged and release the session', async () => {
   const calls = []
   let shouldFail = true

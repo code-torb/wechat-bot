@@ -5,6 +5,7 @@ export function executeCommand({ command, args, policy, helpItems }) {
     return { type: 'text', text: `可用命令：\n${lines.join('\n')}` }
   }
   if (command.builtin === 'reset') return { type: 'reset' }
+  if (command.builtin === 'newchat') return { type: 'newchat' }
   const authorized = command.capabilities.every((capability) => policy.authorize({ capability }).allowed)
   if (!authorized) return { type: 'denied', text: '你没有权限执行该命令。' }
   if (command.executionType === 'static') {

@@ -1,7 +1,16 @@
-export const BUILTIN_COMMANDS = Object.freeze(['/help', '/reset'])
+export const BUILTIN_COMMANDS = Object.freeze([
+  { name: '/help', builtin: 'help' },
+  { name: '/reset', builtin: 'reset' },
+  { name: '/new', builtin: 'newchat', aliases: ['/newchat', '/新对话', '/开始新对话'] },
+])
 
 function normalizeName(name) {
   return name.toLowerCase()
+}
+
+function matchBuiltin(rawName) {
+  const normalized = normalizeName(rawName)
+  return BUILTIN_COMMANDS.find((command) => command.name === rawName || (command.aliases || []).some((alias) => normalizeName(alias) === normalized))
 }
 
 export function createCommandRegistry({ db }) {
@@ -22,8 +31,9 @@ export function createCommandRegistry({ db }) {
       if (!trimmed.startsWith('/')) return null
       const [rawName, ...rest] = trimmed.split(/\s+/)
       const name = normalizeName(rawName.slice(1))
-      if (BUILTIN_COMMANDS.includes(rawName)) {
-        return { builtin: rawName === '/help' ? 'help' : 'reset', name: rawName, args: rest }
+      const builtin = matchBuiltin(rawName)
+      if (builtin) {
+        return { builtin: builtin.builtin, name: rawName, args: rest }
       }
       for (const def of this.definitions(agentVersion)) {
         const aliases = JSON.parse(def.aliases_json)

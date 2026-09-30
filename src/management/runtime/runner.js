@@ -2,6 +2,7 @@ import { compileStyles } from '../styles/compiler.js'
 import { executeCommand } from '../commands/executor.js'
 
 const RESET_REPLY = '已重置这段对话。'
+const NEW_CHAT_REPLY = '好的，已开启一轮新的对话。'
 
 export function createAgentRuntime({
   db,
@@ -38,11 +39,15 @@ export function createAgentRuntime({
   }
 
   function availableHelp(agentVersion, context) {
+    const builtins = [
+      { name: '/new', description: '开启一轮新的对话' },
+      { name: '/reset', description: '清除当前会话上下文' },
+    ]
     const items = commandRegistry.definitions(agentVersion).map((definition) => ({
       name: `/${definition.name}`,
       description: definition.input_schema_json ? '可配置命令' : '可配置命令',
     }))
-    return items
+    return [...builtins, ...items]
   }
 
   async function runTurn({ message, route, conversationId, epoch, runId, agentVersion }) {
@@ -57,11 +62,16 @@ export function createAgentRuntime({
         messages,
       })
     }
-    if (command?.builtin === 'reset') {
+    if (command?.builtin === 'reset' || command?.builtin === 'newchat') {
       const reset = conversations.reset({ conversationId, actor: null })
       scheduler.cancelForConversation({ conversationId, epoch, reason: 'reset' })
       db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
-      return { text: RESET_REPLY, immediate: true, epoch: reset.epoch, requiredCapabilities: ['chat'] }
+      return {
+        text: command.builtin === 'newchat' ? NEW_CHAT_REPLY : RESET_REPLY,
+        immediate: true,
+        epoch: reset.epoch,
+        requiredCapabilities: ['chat'],
+      }
     }
     if (command?.builtin === 'help') {
       const result = executeCommand({
@@ -95,11 +105,16 @@ export function createAgentRuntime({
         },
         helpItems: [],
       })
-      if (result.type === 'reset') {
+      if (result.type === 'reset' || result.type === 'newchat') {
         const reset = conversations.reset({ conversationId, actor: null })
         scheduler.cancelForConversation({ conversationId, epoch, reason: 'reset' })
         db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
-        return { text: RESET_REPLY, immediate: true, epoch: reset.epoch, requiredCapabilities: ['chat'] }
+        return {
+          text: result.type === 'newchat' ? NEW_CHAT_REPLY : RESET_REPLY,
+          immediate: true,
+          epoch: reset.epoch,
+          requiredCapabilities: ['chat'],
+        }
       }
       if (result.type === 'denied') {
         db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
