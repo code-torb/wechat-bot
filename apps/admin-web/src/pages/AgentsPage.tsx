@@ -9,7 +9,9 @@ type StoryCharacter = { name: string; reason: string }
 
 export default function AgentsPage() {
   const navigate = useNavigate()
-  const [name, setName] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createDescription, setCreateDescription] = useState('')
   const [storyOpen, setStoryOpen] = useState(false)
   const [storyNameHint, setStoryNameHint] = useState('')
   const [storyFile, setStoryFile] = useState<{ base64: string; fileName: string } | null>(null)
@@ -22,11 +24,16 @@ export default function AgentsPage() {
   })
   const create = useMutation({
     mutationFn: async () => {
-      const result = await api<Agent>('/api/v1/agents', { method: 'POST', body: { name: name.trim() } })
+      const result = await api<Agent>('/api/v1/agents', {
+        method: 'POST',
+        body: { name: createName.trim(), description: createDescription.trim() },
+      })
       return result.data
     },
     onSuccess: (result) => {
-      setName('')
+      setCreateOpen(false)
+      setCreateName('')
+      setCreateDescription('')
       queryClient.invalidateQueries({ queryKey: ['agents'] })
       navigate(`/agents/${result.id}`)
     },
@@ -79,8 +86,7 @@ export default function AgentsPage() {
   return (
     <div className='page'>
       <Space style={{ marginBottom: 12 }}>
-        <Input placeholder='名称' value={name} onChange={(event) => setName(event.target.value)} />
-        <Button type='primary' disabled={!name.trim()} loading={create.isPending} onClick={() => create.mutate()}>
+        <Button type='primary' onClick={() => setCreateOpen(true)}>
           新建 Agent
         </Button>
         <Button onClick={() => setStoryOpen(true)}>从小说创建</Button>
@@ -112,6 +118,29 @@ export default function AgentsPage() {
           },
         ]}
       />
+      <Modal
+        title='新建 Agent'
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => create.mutate()}
+        okText='创建'
+        okButtonProps={{ disabled: !createName.trim(), loading: create.isPending }}
+      >
+        <Input
+          aria-label='名称'
+          placeholder='名称'
+          value={createName}
+          onChange={(event) => setCreateName(event.target.value)}
+          style={{ marginBottom: 10 }}
+        />
+        <Input.TextArea
+          aria-label='描述'
+          placeholder='描述（可选）'
+          value={createDescription}
+          onChange={(event) => setCreateDescription(event.target.value)}
+          rows={3}
+        />
+      </Modal>
       <Modal
         title='从小说创建角色 Agent'
         open={storyOpen}

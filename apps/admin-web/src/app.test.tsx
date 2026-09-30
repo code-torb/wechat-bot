@@ -30,8 +30,9 @@ it('restores csrf from an existing session before enabling mutations', async () 
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
   fireEvent.change(await screen.findByPlaceholderText('名称'), { target: { value: '测试 Agent' } })
-  fireEvent.click(screen.getByRole('button', { name: '新建 Agent' }))
+  fireEvent.click(await screen.findByRole('button', { name: /^创\s*建$/ }))
   await waitFor(() => expect(requests.some((request) => request.path === '/api/v1/agents' && request.init?.method === 'POST')).toBe(true))
   const mutation = requests.find((request) => request.path === '/api/v1/agents' && request.init?.method === 'POST')
   expect(mutation?.init?.headers).toMatchObject({ 'x-csrf-token': 'restored-token' })
@@ -49,12 +50,15 @@ it('does not submit an Agent with an empty or whitespace-only name', async () =>
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/agents']}><App /></MemoryRouter>
+      <MemoryRouter initialEntries={['/agents']}>
+        <App />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
-  const input = await screen.findByPlaceholderText('名称')
-  const create = screen.getByRole('button', { name: '新建 Agent' })
+  fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
+  const create = await screen.findByRole('button', { name: /^创\s*建$/ })
   expect(create).toBeDisabled()
+  const input = await screen.findByPlaceholderText('名称')
   fireEvent.change(input, { target: { value: '   ' } })
   expect(create).toBeDisabled()
   expect(requests.filter(({ path, init }) => path === '/api/v1/agents' && init?.method === 'POST')).toHaveLength(0)
