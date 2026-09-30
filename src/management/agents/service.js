@@ -7,6 +7,7 @@ function defaultDraft() {
     name: '',
     description: '',
     prompt: '',
+    attributes: { name: '', birthDate: '', gender: '', occupation: '', hobbies: '' },
     model: { providerId: '', credentialRef: '', name: '', supportsTools: false },
     styleValues: [],
     pacing: null,
@@ -14,6 +15,18 @@ function defaultDraft() {
     searchMode: 'off',
     resourceGrants: [],
     commandRefs: [],
+  }
+}
+
+function sanitizeAttributes(input) {
+  const base = defaultDraft().attributes
+  if (!input || typeof input !== 'object') return base
+  return {
+    name: typeof input.name === 'string' ? input.name.trim() : '',
+    birthDate: typeof input.birthDate === 'string' ? input.birthDate.trim() : '',
+    gender: typeof input.gender === 'string' ? input.gender.trim() : '',
+    occupation: typeof input.occupation === 'string' ? input.occupation.trim() : '',
+    hobbies: typeof input.hobbies === 'string' ? input.hobbies.trim() : '',
   }
 }
 
@@ -34,6 +47,7 @@ function normalizeDraft(input, { requireComplete = false } = {}) {
     name: draft.name.trim(),
     description: typeof draft.description === 'string' ? draft.description : '',
     prompt: draft.prompt,
+    attributes: sanitizeAttributes(draft.attributes),
     model: {
       providerId: draft.model.providerId,
       credentialRef: draft.model.credentialRef,
@@ -92,6 +106,7 @@ export function createAgentService({ db, audit }) {
       name: draft.name,
       description: draft.description,
       prompt: draft.prompt,
+      attributes: draft.attributes,
       model: draft.model,
       styleValues: draft.styleValues,
       pacing: draft.pacing,

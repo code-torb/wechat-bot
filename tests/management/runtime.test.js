@@ -18,6 +18,7 @@ import { createCommandRegistry } from '../../src/management/commands/registry.js
 import { renderReply } from '../../src/platforms/onebot/render.js'
 import { SecretStore } from '../../src/management/secrets/store.js'
 import { createModelClient } from '../../src/chat/model-client.js'
+import { RELATIONS_TTL_MS, createAgentProfileService } from '../../src/management/agents/profile-service.js'
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'runtime-test-'))
@@ -448,4 +449,183 @@ test('/help lists the built-in new chat command', async (t) => {
   await queuedTask()
   assert.match(scheduled.reply.text, /\/new - 开启一轮新的对话/)
   assert.match(scheduled.reply.text, /\/reset - 清除当前会话上下文/)
+})
+
+test('persona attributes, relations and knowledge enter the system prompt', async (t) => {
+  const { db, service, router, conversations, agent } = fixture(t)
+  service.updateDraft({
+    agentId: agent.id,
+    draft: {
+      attributes: { name: '林安宁', birthDate: '1988-05-06', gender: '女', occupation: '编辑', hobbies: '读书' },
+    },
+    expectedRevision: 3,
+    actorId: 'a',
+  })
+  service.publish({ agentId: agent.id, expectedRevision: 4, actorId: 'a' })
+  const now = Date.now()
+  db.prepare(
+    'INSERT INTO agent_relations (id, agent_id, person_name, relation_json, context_doc, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run('rel-1', agent.id, '周叙', JSON.stringify({ description: '丈夫' }), '他是丈夫，习惯独自决定家里大事。', now, now)
+  db.prepare('INSERT INTO agent_knowledge_docs (id, agent_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+    'doc-1',
+    agent.id,
+    '上海往事',
+    '她年轻时在出版社工作。',
+    now,
+    now,
+  )
+  let queuedTask
+  let system
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule() {},
+      cancelForConversation() {},
+    },
+    complete: async ({ messages }) => {
+      system = messages[0].content
+      return { text: '回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'persona-1',
+    text: '你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.match(system, /角色档案/)
+  assert.match(system, /姓名：林安宁/)
+  assert.match(system, /职业：编辑/)
+  assert.match(system, /人物关系（周叙）/)
+  assert.match(system, /背景资料（上海往事）/)
+})
+
+test('stale relations refresh automatically before a normal turn', async (t) => {
+  const { db, service, router, conversations, agent } = fixture(t)
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async () => ({ text: '生成的关系文档', toolCalls: [] }),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
+  const now = Date.now()
+  db.prepare(
+    'INSERT INTO agent_relations (id, agent_id, person_name, relation_json, context_doc, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run('rel-stale', agent.id, '周叙', '{}', '', now - RELATIONS_TTL_MS - 1000, now)
+  let queuedTask
+  let replyText
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        replyText = plan.reply.text
+      },
+      cancelForConversation() {},
+    },
+    complete: async () => ({ text: '对话回复', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    refreshStaleRelations: ({ agentId }) => profileService.refreshStaleRelations({ agentId }),
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'stale-1',
+    text: '你好',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.equal(db.prepare('SELECT context_doc FROM agent_relations WHERE id = ?').get('rel-stale').context_doc, '生成的关系文档')
+  assert.equal(replyText, '对话回复')
+})
+
+test('/refresh manually refreshes all relations and replies', async (t) => {
+  const { db, service, router, conversations, agent } = fixture(t)
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async () => ({ text: '生成的关系文档', toolCalls: [] }),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
+  const now = Date.now()
+  db.prepare(
+    'INSERT INTO agent_relations (id, agent_id, person_name, relation_json, context_doc, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run('rel-a', agent.id, '周叙', '{}', '', now, now)
+  db.prepare(
+    'INSERT INTO agent_relations (id, agent_id, person_name, relation_json, context_doc, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run('rel-b', agent.id, '陈屿', '{}', '', now, now)
+  let queuedTask
+  let replyText
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule: (plan) => {
+        replyText = plan.reply.text
+      },
+      cancelForConversation() {},
+    },
+    complete: async () => ({ text: '', toolCalls: [] }),
+    tools: { execute: async () => ({ status: 'denied' }) },
+    refreshAllRelations: ({ agentId }) => profileService.refreshAllRelations({ agentId }),
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'refresh-1',
+    text: '/更新关系',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.equal(replyText, '已更新 2 位人物关系上下文。')
 })

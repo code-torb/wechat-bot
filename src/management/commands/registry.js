@@ -2,6 +2,7 @@ export const BUILTIN_COMMANDS = Object.freeze([
   { name: '/help', builtin: 'help' },
   { name: '/reset', builtin: 'reset' },
   { name: '/new', builtin: 'newchat', aliases: ['/newchat', '/新对话', '/开始新对话'] },
+  { name: '/refresh', builtin: 'refresh-relations', aliases: ['/refresh-relations', '/更新关系'] },
 ])
 
 function normalizeName(name) {

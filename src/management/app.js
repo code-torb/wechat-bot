@@ -6,7 +6,7 @@ import { SESSION_COOKIE } from './auth/routes.js'
 import { loadUser } from './auth/authorization.js'
 
 export async function createApp({ db, clock = Date.now, sessions, logger = true }) {
-  const app = Fastify({ logger })
+  const app = Fastify({ logger, bodyLimit: 10 * 1024 * 1024 })
   await app.register(cookie)
   const dist = process.env.MANAGEMENT_DIST
   if (dist && existsSync(dist)) {

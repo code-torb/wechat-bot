@@ -10,6 +10,7 @@ import { registerCommandRoutes } from './commands/routes.js'
 import { registerProviderRoutes } from './providers/routes.js'
 import { registerMemeRoutes } from './tools/meme-routes.js'
 import { registerFileResourceRoutes } from './tools/file-routes.js'
+import { registerProfileRoutes } from './agents/profile-routes.js'
 
 export function registerManagementRoutes(app, deps) {
   registerAuthRoutes(app, deps)
@@ -24,4 +25,5 @@ export function registerManagementRoutes(app, deps) {
   registerProviderRoutes(app, deps)
   registerMemeRoutes(app, deps)
   registerFileResourceRoutes(app, deps)
+  registerProfileRoutes(app, deps)
 }

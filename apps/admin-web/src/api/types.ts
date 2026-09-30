@@ -7,6 +7,13 @@ export type Agent = {
   publishedVersionId: string | null
   draft: {
     prompt: string
+    attributes: {
+      name: string
+      birthDate: string
+      gender: string
+      occupation: string
+      hobbies: string
+    }
     model: { providerId: string; credentialRef: string; name: string; supportsTools: boolean }
     styleValues: { definitionId: string; definitionVersionId: string; value: number }[]
     pacing: { baseDelayMs: number; charsPerSecond: number; maxDelayMs: number } | null
@@ -15,6 +22,23 @@ export type Agent = {
     resourceGrants: { resourceId: string }[]
     commandRefs: string[]
   }
+  createdAt: number
+  updatedAt: number
+}
+
+export type AgentRelation = {
+  id: string
+  personName: string
+  relation: string
+  contextDoc: string
+  updatedAt: number
+  createdAt: number
+}
+
+export type KnowledgeDoc = {
+  id: string
+  title: string
+  chars: number
   createdAt: number
   updatedAt: number
 }

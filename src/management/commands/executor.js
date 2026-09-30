@@ -6,6 +6,7 @@ export function executeCommand({ command, args, policy, helpItems }) {
   }
   if (command.builtin === 'reset') return { type: 'reset' }
   if (command.builtin === 'newchat') return { type: 'newchat' }
+  if (command.builtin === 'refresh-relations') return { type: 'refresh-relations' }
   const authorized = command.capabilities.every((capability) => policy.authorize({ capability }).allowed)
   if (!authorized) return { type: 'denied', text: '你没有权限执行该命令。' }
   if (command.executionType === 'static') {

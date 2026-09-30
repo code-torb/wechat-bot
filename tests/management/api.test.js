@@ -16,6 +16,7 @@ import { createQQRouter } from '../../src/management/qq/router.js'
 import { createConversationStore } from '../../src/management/conversations/repository.js'
 import { createGrantRepository } from '../../src/management/permissions/grants.js'
 import { hashPassword } from '../../src/management/auth/passwords.js'
+import { createAgentProfileService } from '../../src/management/agents/profile-service.js'
 
 const SESSION_COOKIE = 'mgmt_session'
 
@@ -57,8 +58,28 @@ async function build(t) {
   const qqRouter = createQQRouter({ db, service })
   const conversations = createConversationStore(db)
   const grants = createGrantRepository(db)
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit,
+    complete: async ({ messages }) => ({ text: `生成的关系文档：${String(messages.at(-1).content).slice(0, 50)}`, toolCalls: [] }),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
   const app = await createApp({ db, sessions, logger: false })
-  registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter, conversations, grants })
+  registerManagementRoutes(app, {
+    db,
+    sessions,
+    secretStore,
+    service,
+    audit,
+    styles,
+    qqRules,
+    qqRouter,
+    conversations,
+    grants,
+    profileService,
+  })
   db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(await hashPassword('pw'), 'owner-1')
   return { app, db }
 }
@@ -258,6 +279,84 @@ test('default role background is available to an authorized Agent editor', async
   assert.equal(result.statusCode, 200, result.body)
   assert.match(result.json().data.background, /林安宁/)
   assert.match(result.json().data.background, /儿子/)
+})
+
+test('profile APIs manage relations, knowledge and story creation', async (t) => {
+  const { app } = await build(t)
+  t.after(() => app.close())
+  const { cookie, csrf } = await login(app)
+  const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { name: '小说角色' },
+  })
+  const id = created.json().data.id
+  const published = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/publish`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {
+      expectedRevision: 1,
+      draft: {
+        prompt: '她曾是编辑，如今在家照顾儿子。',
+        attributes: { name: '沈宁', birthDate: '1992-01-01', gender: '女', occupation: '设计师', hobbies: '跑步' },
+        model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+      },
+    },
+  })
+  assert.equal(published.statusCode, 200, published.body)
+  const relation = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/relations`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { personName: '周叙', relation: '丈夫' },
+  })
+  assert.equal(relation.statusCode, 201, relation.body)
+  const relationId = relation.json().data.id
+  const refreshed = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/relations/${relationId}/refresh`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {},
+  })
+  assert.equal(refreshed.statusCode, 200, refreshed.body)
+  assert.match(refreshed.json().data.contextDoc, /^生成的关系文档：/)
+  const doc = await app.inject({
+    method: 'POST',
+    url: `/api/v1/agents/${id}/knowledge-docs`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: { title: '往事', dataBase64: Buffer.from('她在出版社工作过。').toString('base64') },
+  })
+  assert.equal(doc.statusCode, 201, doc.body)
+  const profile = await app.inject({
+    method: 'GET',
+    url: `/api/v1/agents/${id}/profile`,
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(profile.statusCode, 200)
+  assert.equal(profile.json().data.attributes.name, '沈宁')
+  assert.equal(profile.json().data.relations.length, 1)
+  assert.equal(profile.json().data.knowledgeDocs.length, 1)
+  const story = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents/from-story',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {
+      dataBase64: Buffer.from('我叫沈宁，生于1992年，是一个女生。后来我做了设计师，平时喜欢跑步。\n第一章\n沈宁在深圳。').toString('base64'),
+      fileName: '沈宁.txt',
+    },
+  })
+  assert.equal(story.statusCode, 201, story.body)
+  assert.equal(story.json().data.draft.attributes.name, '沈宁')
+  assert.equal(story.json().data.draft.attributes.occupation, '设计师')
 })
 
 test('mutations without csrf token are rejected', async (t) => {

@@ -3,7 +3,7 @@ import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Ta
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Agent, CommandDefinition, Conversation, StyleDefinition } from '../api/types'
+import type { Agent, AgentRelation, CommandDefinition, Conversation, KnowledgeDoc, StyleDefinition } from '../api/types'
 import { styleGuidance } from './styleGuidance'
 
 export default function AgentDetailPage() {
@@ -25,12 +25,22 @@ export default function AgentDetailPage() {
     queryKey: ['conversations', id],
     queryFn: () => api<Conversation[]>(`/api/v1/conversations?agentId=${id}`).then((result) => result.data),
   })
+  const { data: relations } = useQuery({
+    queryKey: ['relations', id],
+    queryFn: () => api<AgentRelation[]>(`/api/v1/agents/${id}/relations`).then((result) => result.data),
+  })
+  const { data: knowledgeDocs } = useQuery({
+    queryKey: ['knowledge-docs', id],
+    queryFn: () => api<KnowledgeDoc[]>(`/api/v1/agents/${id}/knowledge-docs`).then((result) => result.data),
+  })
   const { data: defaultRole } = useQuery({
     queryKey: ['default-role-background'],
     queryFn: () => api<{ background: string }>('/api/v1/agents/default-role-background').then((result) => result.data),
     enabled: agent?.name === '默认 Agent' && agent.description === '由旧配置导入',
   })
   const [draft, setDraft] = useState<Agent['draft'] | null>(null)
+  const [relationForm, setRelationForm] = useState({ personName: '', relation: '' })
+  const [knowledgeForm, setKnowledgeForm] = useState({ title: '', base64: '', fileName: '' })
   useEffect(() => {
     if (agent) setDraft(agent.draft)
   }, [agent])
@@ -46,12 +56,73 @@ export default function AgentDetailPage() {
     onError: (error) => message.error(error instanceof Error ? error.message : '保存并发布失败'),
   })
 
+  const addRelation = useMutation({
+    mutationFn: () => api<AgentRelation>(`/api/v1/agents/${id}/relations`, { method: 'POST', body: relationForm }),
+    onSuccess: () => {
+      message.success('人物关系已保存')
+      setRelationForm({ personName: '', relation: '' })
+      queryClient.invalidateQueries({ queryKey: ['relations', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '保存人物关系失败'),
+  })
+  const refreshRelation = useMutation({
+    mutationFn: (relationId: string) => api(`/api/v1/agents/${id}/relations/${relationId}/refresh`, { method: 'POST', body: {} }),
+    onSuccess: () => {
+      message.success('关系上下文已更新')
+      queryClient.invalidateQueries({ queryKey: ['relations', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '更新失败'),
+  })
+  const refreshAll = useMutation({
+    mutationFn: () => api<{ updated: number }>(`/api/v1/agents/${id}/relations/refresh-all`, { method: 'POST', body: {} }),
+    onSuccess: (result) => {
+      message.success(`已更新 ${result.data.updated} 位人物关系`)
+      queryClient.invalidateQueries({ queryKey: ['relations', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '更新失败'),
+  })
+  const removeRelation = useMutation({
+    mutationFn: (relationId: string) => api(`/api/v1/agents/${id}/relations/${relationId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      message.success('人物关系已删除')
+      queryClient.invalidateQueries({ queryKey: ['relations', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
+  })
+
+  const uploadKnowledge = useMutation({
+    mutationFn: async () => {
+      const title = knowledgeForm.title.trim() || knowledgeForm.fileName.replace(/\.txt$/i, '') || '未命名资料'
+      const result = await api<KnowledgeDoc>(`/api/v1/agents/${id}/knowledge-docs`, {
+        method: 'POST',
+        body: { title, dataBase64: knowledgeForm.base64 },
+      })
+      return result.data
+    },
+    onSuccess: () => {
+      message.success('已上传文本')
+      setKnowledgeForm({ title: '', base64: '', fileName: '' })
+      queryClient.invalidateQueries({ queryKey: ['knowledge-docs', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '上传失败'),
+  })
+  const removeKnowledge = useMutation({
+    mutationFn: (docId: string) => api(`/api/v1/agents/${id}/knowledge-docs/${docId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      message.success('资料已删除')
+      queryClient.invalidateQueries({ queryKey: ['knowledge-docs', id] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
+  })
+
   if (isLoading || !agent || !draft) return <Spin style={{ display: 'block', margin: '80px auto' }} />
 
   const eligibleStyles = (styles || []).filter((style) => style.ownerAgentId === null || style.ownerAgentId === agent.id)
   const availableStyles = eligibleStyles.filter((style) => style.enabled && !draft.styleValues.some((item) => item.definitionId === style.id))
   const canPublish = Boolean(draft.prompt.trim() && draft.model.providerId.trim() && draft.model.credentialRef.trim() && draft.model.name.trim())
   const updateModel = (model: Partial<Agent['draft']['model']>) => setDraft({ ...draft, model: { ...draft.model, ...model } })
+  const updateAttributes = (attributes: Partial<Agent['draft']['attributes']>) =>
+    setDraft({ ...draft, attributes: { ...(draft.attributes || {}), ...attributes } })
 
   return (
     <div className='page agent-detail-page'>
@@ -82,8 +153,59 @@ export default function AgentDetailPage() {
                 <div className='agent-detail-section'>
                   <div className='agent-section-heading'>
                     <div>
+                      <h3>基本信息</h3>
+                      <p>姓名、出生日期、性别、职业、爱好等属性单独填写；背景故事只写生活经历。</p>
+                    </div>
+                  </div>
+                  <div className='agent-attribute-grid'>
+                    <label>
+                      姓名
+                      <Input
+                        aria-label='角色姓名'
+                        value={draft.attributes?.name ?? ''}
+                        onChange={(event) => updateAttributes({ name: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      出生日期
+                      <Input
+                        aria-label='出生日期'
+                        placeholder='例如 1988-05-06'
+                        value={draft.attributes?.birthDate ?? ''}
+                        onChange={(event) => updateAttributes({ birthDate: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      性别
+                      <Input
+                        aria-label='性别'
+                        value={draft.attributes?.gender ?? ''}
+                        onChange={(event) => updateAttributes({ gender: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      职业
+                      <Input
+                        aria-label='职业'
+                        value={draft.attributes?.occupation ?? ''}
+                        onChange={(event) => updateAttributes({ occupation: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      爱好
+                      <Input
+                        aria-label='爱好'
+                        value={draft.attributes?.hobbies ?? ''}
+                        onChange={(event) => updateAttributes({ hobbies: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className='agent-detail-section'>
+                  <div className='agent-section-heading'>
+                    <div>
                       <h3>角色设定</h3>
-                      <p>只写人物的背景故事与经历。说话习惯、情绪和表达程度请在下方的对话设定中调整。</p>
+                      <p>只写人物的生活经历与故事。说话习惯、情绪和表达程度请在下方的对话设定中调整。</p>
                     </div>
                     {defaultRole && <Button onClick={() => setDraft({ ...draft, prompt: defaultRole.background })}>填入默认人物背景</Button>}
                   </div>
@@ -92,7 +214,7 @@ export default function AgentDetailPage() {
                     rows={9}
                     value={draft.prompt}
                     onChange={(event) => setDraft({ ...draft, prompt: event.target.value })}
-                    placeholder='写下人物的姓名、成长、家庭、工作与人生经历……'
+                    placeholder='写下人物的生活经历与故事，例如成长、家庭、工作后的经历……'
                   />
                 </div>
                 <div className='agent-detail-section'>
@@ -239,6 +361,130 @@ export default function AgentDetailPage() {
                     />
                   </Space>
                 </div>
+              </Card>
+            ),
+          },
+          {
+            key: 'relations',
+            label: '人物关系',
+            children: (
+              <Card className='agent-detail-card'>
+                <div className='agent-section-heading'>
+                  <div>
+                    <h3>人物关系</h3>
+                    <p>
+                      为每个相关人物建立独立的关系文档。对话时角色会带上这些关系，对方只要说明自己是谁即可。每 12 小时自动更新，也可用 /refresh
+                      命令或下方按钮手动更新。
+                    </p>
+                  </div>
+                  <Button onClick={() => refreshAll.mutate()} loading={refreshAll.isPending}>
+                    全部更新
+                  </Button>
+                </div>
+                <div className='agent-relation-form'>
+                  <Input
+                    aria-label='人物名称'
+                    placeholder='人物名称'
+                    value={relationForm.personName}
+                    onChange={(event) => setRelationForm({ ...relationForm, personName: event.target.value })}
+                  />
+                  <Input.TextArea
+                    aria-label='关系简介'
+                    rows={2}
+                    placeholder='关系简介（可选，更新时由模型扩展成关系上下文）'
+                    value={relationForm.relation}
+                    onChange={(event) => setRelationForm({ ...relationForm, relation: event.target.value })}
+                  />
+                  <Button
+                    type='primary'
+                    disabled={!relationForm.personName.trim()}
+                    loading={addRelation.isPending}
+                    onClick={() => addRelation.mutate()}
+                  >
+                    添加人物
+                  </Button>
+                </div>
+                {relations?.length === 0 && <p className='agent-empty-styles'>还没有人物关系。先添加一个人物，再点“更新”生成关系上下文。</p>}
+                {relations?.map((rel) => (
+                  <div key={rel.id} className='agent-relation-row'>
+                    <div className='agent-relation-head'>
+                      <strong>{rel.personName}</strong>
+                      <span>{rel.relation || '未填写简介'}</span>
+                    </div>
+                    {rel.contextDoc ? (
+                      <p className='agent-relation-doc'>{rel.contextDoc}</p>
+                    ) : (
+                      <p className='muted'>尚未生成关系上下文，点击“更新”生成。</p>
+                    )}
+                    <div className='agent-relation-meta'>
+                      <span>更新于 {new Date(rel.updatedAt).toLocaleString()}</span>
+                      <Button size='small' onClick={() => refreshRelation.mutate(rel.id)} loading={refreshRelation.isPending}>
+                        更新
+                      </Button>
+                      <Button size='small' danger onClick={() => removeRelation.mutate(rel.id)} loading={removeRelation.isPending}>
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            ),
+          },
+          {
+            key: 'knowledge',
+            label: '知识库',
+            children: (
+              <Card className='agent-detail-card'>
+                <div className='agent-section-heading'>
+                  <div>
+                    <h3>知识库</h3>
+                    <p>上传 txt 文本作为角色的背景资料。对话时按最新资料节选注入，帮助角色了解自己的过往。</p>
+                  </div>
+                </div>
+                <div className='agent-knowledge-form'>
+                  <Input
+                    aria-label='资料标题'
+                    placeholder='资料标题'
+                    value={knowledgeForm.title}
+                    onChange={(event) => setKnowledgeForm({ ...knowledgeForm, title: event.target.value })}
+                  />
+                  <input
+                    aria-label='选择文本文件'
+                    type='file'
+                    accept='.txt,text/plain'
+                    onChange={(event) => {
+                      const file = event.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const dataUrl = String(reader.result || '')
+                        setKnowledgeForm({ ...knowledgeForm, base64: dataUrl.split(',')[1] || '', fileName: file.name })
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <Button
+                    type='primary'
+                    disabled={!knowledgeForm.base64}
+                    loading={uploadKnowledge.isPending}
+                    onClick={() => uploadKnowledge.mutate()}
+                  >
+                    上传文本
+                  </Button>
+                </div>
+                {knowledgeDocs?.map((doc) => (
+                  <div key={doc.id} className='agent-knowledge-row'>
+                    <div>
+                      <strong>{doc.title}</strong>
+                      <span className='muted'>
+                        {doc.chars} 字 · {new Date(doc.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <Button size='small' danger onClick={() => removeKnowledge.mutate(doc.id)} loading={removeKnowledge.isPending}>
+                      删除
+                    </Button>
+                  </div>
+                ))}
               </Card>
             ),
           },

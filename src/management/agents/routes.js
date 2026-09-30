@@ -21,6 +21,17 @@ const agentMutationSchema = {
       name: { type: 'string', minLength: 1, maxLength: 120 },
       description: { type: 'string', maxLength: 1000 },
       prompt: { type: 'string', minLength: 1, maxLength: 32000 },
+      attributes: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', maxLength: 80 },
+          birthDate: { type: 'string', maxLength: 40 },
+          gender: { type: 'string', maxLength: 20 },
+          occupation: { type: 'string', maxLength: 80 },
+          hobbies: { type: 'string', maxLength: 400 },
+        },
+      },
       model: {
         type: 'object',
         properties: {

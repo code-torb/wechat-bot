@@ -44,6 +44,8 @@ test('builtin help and reset match and unknown commands report help', (t) => {
   assert.equal(registry.match(agentVersion, '/new').builtin, 'newchat')
   assert.equal(registry.match(agentVersion, '/newchat').builtin, 'newchat')
   assert.equal(registry.match(agentVersion, '/新对话').builtin, 'newchat')
+  assert.equal(registry.match(agentVersion, '/refresh').builtin, 'refresh-relations')
+  assert.equal(registry.match(agentVersion, '/更新关系').builtin, 'refresh-relations')
   assert.equal(registry.match(agentVersion, '/rules').commandId, 'cmd-a')
   assert.equal(registry.match(agentVersion, '别名'.length ? '/rules' : '/x').name, '/rules')
   assert.equal(registry.match(agentVersion, '/unknown'), null)
@@ -68,6 +70,9 @@ test('executor enforces command capabilities and limits workflows to five steps'
   const translate = executeCommand({ command: registry.match(agentVersion, '/translate'), args: ['你好'], policy, helpItems: [] })
   assert.equal(translate.type, 'model_task')
   assert.deepEqual(executeCommand({ command: registry.match(agentVersion, '/new'), args: [], policy, helpItems: [] }), { type: 'newchat' })
+  assert.deepEqual(executeCommand({ command: registry.match(agentVersion, '/refresh'), args: [], policy, helpItems: [] }), {
+    type: 'refresh-relations',
+  })
   const workflow = executeCommand({
     command: { executionType: 'workflow', capabilities: ['files.update'], steps: Array(6).fill({}) },
     args: [],

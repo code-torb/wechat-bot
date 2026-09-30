@@ -15,8 +15,8 @@ function tempDb(t) {
 test('migration applies once, is idempotent, and enables foreign keys', (t) => {
   const { filename } = tempDb(t)
   const db = openDatabase({ filename })
-  assert.equal(migrate(db), 2)
-  assert.equal(migrate(db), 2)
+  assert.equal(migrate(db), 3)
+  assert.equal(migrate(db), 3)
   assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1)
   db.close()
 })

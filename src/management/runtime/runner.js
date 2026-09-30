@@ -16,11 +16,41 @@ export function createAgentRuntime({
   getCredential,
   getProvider,
   sessionQueue,
+  refreshStaleRelations,
+  refreshAllRelations,
   logger = console,
 }) {
+  function personaContext(agentVersion) {
+    const attributes = agentVersion.attributes || {}
+    const lines = []
+    const fields = [
+      ['姓名', attributes.name],
+      ['出生日期', attributes.birthDate],
+      ['性别', attributes.gender],
+      ['职业', attributes.occupation],
+      ['爱好', attributes.hobbies],
+    ]
+    for (const [label, value] of fields) {
+      if (typeof value === 'string' && value.trim()) lines.push(`${label}：${value.trim()}`)
+    }
+    const relations = db
+      .prepare("SELECT person_name, context_doc FROM agent_relations WHERE agent_id = ? AND context_doc <> '' ORDER BY updated_at DESC")
+      .all(agentVersion.id)
+    for (const rel of relations) {
+      lines.push(`人物关系（${rel.person_name}）：${rel.context_doc.slice(0, 700)}`)
+    }
+    const docs = db.prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC').all(agentVersion.id)
+    for (const doc of docs) {
+      lines.push(`背景资料（${doc.title}）：${doc.content.slice(0, 500)}`)
+    }
+    return lines.length ? `角色档案：\n${lines.join('\n')}` : ''
+  }
+
   function buildSystem(agentVersion) {
+    const persona = personaContext(agentVersion)
+    const prompt = persona ? `${persona}\n\n${agentVersion.prompt}` : agentVersion.prompt
     return compileStyles({
-      prompt: agentVersion.prompt,
+      prompt,
       definitions: (agentVersion.styleValues || []).map((value) => {
         const version = db
           .prepare('SELECT name, low_text, mid_text, high_text FROM style_definition_versions WHERE id = ?')
@@ -42,6 +72,7 @@ export function createAgentRuntime({
     const builtins = [
       { name: '/new', description: '开启一轮新的对话' },
       { name: '/reset', description: '清除当前会话上下文' },
+      { name: '/refresh', description: '手动更新人物关系上下文' },
     ]
     const items = commandRegistry.definitions(agentVersion).map((definition) => ({
       name: `/${definition.name}`,
@@ -82,6 +113,20 @@ export function createAgentRuntime({
       })
       db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
       return { text: result.text, immediate: true, requiredCapabilities: ['chat'] }
+    }
+    if (command?.builtin === 'refresh-relations') {
+      db.prepare("UPDATE runs SET status = 'sent' WHERE id = ?").run(runId)
+      try {
+        const updated = (await refreshAllRelations?.({ agentId: agentVersion.id })) ?? 0
+        return {
+          text: updated > 0 ? `已更新 ${updated} 位人物关系上下文。` : '没有可更新的人物关系，或模型不可用。',
+          immediate: true,
+          requiredCapabilities: ['chat'],
+        }
+      } catch (error) {
+        logger.error({ err: error, agentId: agentVersion.id }, '手动刷新人物关系失败')
+        return { text: '人物关系更新失败，请确认模型已配置。', immediate: true, requiredCapabilities: ['chat'] }
+      }
     }
     if (command) {
       const context = {
@@ -134,6 +179,14 @@ export function createAgentRuntime({
           runId,
         )
         return { text: reply.text, immediate: false, requiredCapabilities: ['chat'] }
+      }
+    }
+
+    if (!command) {
+      try {
+        await refreshStaleRelations?.({ agentId: agentVersion.id })
+      } catch (error) {
+        logger.warn({ err: error, agentId: agentVersion.id }, '人物关系自动更新失败，本轮对话继续')
       }
     }
 

@@ -28,6 +28,7 @@ function renderAgent({ name = '助手', description = '' } = {}) {
           name,
           description,
           prompt: '林安宁住在上海。',
+          attributes: { name: '林安宁', birthDate: '', gender: '女', occupation: '编辑', hobbies: '读书' },
           model: { providerId: 'provider-a', credentialRef: 'credential-a', name: 'test-model', supportsTools: false },
           styleValues: [],
           pacing: null,
@@ -88,6 +89,7 @@ it('adds only chosen dialogue settings and publishes role edits in a single requ
   fireEvent.change(screen.getByRole('combobox', { name: '选择对话设定' }), { target: { value: 'style-a' } })
   fireEvent.change(await screen.findByRole('spinbutton', { name: '简短程度取值' }), { target: { value: '0' } })
   fireEvent.change(screen.getByRole('textbox', { name: '角色设定' }), { target: { value: '林安宁曾是编辑，如今照顾儿子。' } })
+  fireEvent.change(screen.getByRole('textbox', { name: '角色姓名' }), { target: { value: '沈宁' } })
   expect(requests.filter(({ init }) => init?.method === 'PATCH' || init?.method === 'POST')).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: '保存并发布' }))
   await waitFor(() => expect(requests.some(({ path, init }) => path.endsWith('/publish') && init?.method === 'POST')).toBe(true))
@@ -95,6 +97,7 @@ it('adds only chosen dialogue settings and publishes role edits in a single requ
   const body = JSON.parse(String(published?.init?.body))
   expect(body.expectedRevision).toBe(3)
   expect(body.draft.prompt).toBe('林安宁曾是编辑，如今照顾儿子。')
+  expect(body.draft.attributes.name).toBe('沈宁')
   expect(body.draft.styleValues).toEqual([{ definitionId: 'style-a', definitionVersionId: 'style-v1', value: 0 }])
   expect(requests.some(({ init }) => init?.method === 'PATCH')).toBe(false)
 }, 15000)
