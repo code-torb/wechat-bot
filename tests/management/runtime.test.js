@@ -753,3 +753,62 @@ test('character graph subgraph is injected around the mentioned person', async (
   assert.match(system, /林安宁—周叙/)
   assert.match(system, /林安宁—儿子/)
 })
+
+test('retrieved knowledge entities expand the character graph', async (t) => {
+  const { db, router, conversations, agent } = fixture(t)
+  const now = Date.now()
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', ?, ?, ?)",
+  ).run('n-main', agent.id, '林安宁', '主角', now, now)
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', ?, ?, ?)",
+  ).run('n-zhou', agent.id, '周叙', '分居中的丈夫', now, now)
+  db.prepare(
+    'INSERT INTO character_edges (id, agent_id, source_id, target_id, relation_type, description, boundary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run('e-zhou', agent.id, 'n-main', 'n-zhou', '分居的丈夫', '两人已经分开。', '尊重彼此边界。', now, now)
+  const knowledge = {
+    retrieve: async () => [{ title: '最近动向', content: '周叙最近从外地回来，两人还没有见面。', score: 0.8 }],
+  }
+  let queuedTask
+  let system
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule() {},
+      cancelForConversation() {},
+    },
+    complete: async ({ messages }) => {
+      system = messages[0].content
+      return { text: '回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    knowledge,
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'graph-fusion-1',
+    text: '他还好吗',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.match(system, /人物图谱/)
+  assert.match(system, /周叙：分居中的丈夫/)
+  assert.match(system, /林安宁—周叙/)
+  assert.match(system, /背景资料（最近动向）/)
+})

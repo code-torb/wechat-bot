@@ -21,8 +21,23 @@ export function createAgentRuntime({
   knowledge,
   logger = console,
 }) {
-  function graphContext(agentVersion, query) {
+  function matchingNodeIds(agentVersion, texts) {
     const nodes = db.prepare('SELECT id, name FROM character_nodes WHERE agent_id = ?').all(agentVersion.id)
+    const found = new Set()
+    for (const node of nodes) {
+      if (!node.name) continue
+      for (const text of texts) {
+        if (typeof text === 'string' && text.includes(node.name)) {
+          found.add(node.id)
+          break
+        }
+      }
+    }
+    return Array.from(found)
+  }
+
+  function graphContext(agentVersion, query, extraAnchors = []) {
+    const nodes = db.prepare('SELECT id, name, summary FROM character_nodes WHERE agent_id = ?').all(agentVersion.id)
     if (!nodes.length) return ''
     const edges = db
       .prepare(
@@ -32,24 +47,29 @@ export function createAgentRuntime({
     if (!edges.length) return ''
     const nameById = new Map(nodes.map((node) => [node.id, node.name]))
     const protagonist = agentVersion.attributes?.name || ''
-    let anchors = nodes.filter((node) => node.name && query && query.includes(node.name)).map((node) => node.id)
-    if (!anchors.length && protagonist) {
-      const node = nodes.find((item) => item.name === protagonist)
-      if (node) anchors = [node.id]
+    const anchors = new Set()
+    for (const node of nodes) {
+      if (node.name && query && query.includes(node.name)) anchors.add(node.id)
     }
-    if (!anchors.length && nodes.length) anchors = [nodes[0].id]
-    const hop1 = edges.filter((edge) => anchors.includes(edge.source_id) || anchors.includes(edge.target_id))
+    for (const id of extraAnchors) anchors.add(id)
+    const anchorIds = Array.from(anchors)
+    if (!anchorIds.length && protagonist) {
+      const node = nodes.find((item) => item.name === protagonist)
+      if (node) anchorIds.push(node.id)
+    }
+    if (!anchorIds.length && nodes.length) anchorIds.push(nodes[0].id)
+    const hop1 = edges.filter((edge) => anchorIds.includes(edge.source_id) || anchorIds.includes(edge.target_id))
     const hop1Nodes = new Set(hop1.flatMap((edge) => [edge.source_id, edge.target_id]))
     const hop2 = edges.filter((edge) => hop1Nodes.has(edge.source_id) || hop1Nodes.has(edge.target_id))
     const selected = Array.from(new Map([...hop1, ...hop2].map((edge) => [edge.id, edge])).values()).slice(0, 8)
-    return selected
-      .map((edge) => {
-        const source = nameById.get(edge.source_id) || '未知'
-        const target = nameById.get(edge.target_id) || '未知'
-        const type = edge.relation_type ? `（${edge.relation_type}）` : ''
-        return `${source}—${target}${type}：${edge.description || edge.boundary || ''}`
-      })
-      .join('\n')
+    const summaries = nodes.filter((node) => anchorIds.includes(node.id) && node.summary).map((node) => `${node.name}：${node.summary}`)
+    const edgeLines = selected.map((edge) => {
+      const source = nameById.get(edge.source_id) || '未知'
+      const target = nameById.get(edge.target_id) || '未知'
+      const type = edge.relation_type ? `（${edge.relation_type}）` : ''
+      return `${source}—${target}${type}：${edge.description || edge.boundary || ''}`
+    })
+    return [...summaries, ...edgeLines].join('\n')
   }
 
   async function personaContext(agentVersion, query) {
@@ -71,15 +91,15 @@ export function createAgentRuntime({
     for (const rel of relations) {
       lines.push(`人物关系（${rel.person_name}）：${rel.context_doc.slice(0, 700)}`)
     }
-    const graph = graphContext(agentVersion, query)
-    if (graph) lines.push(`人物图谱：\n${graph}`)
     const docs = db.prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC').all(agentVersion.id)
     let knowledgeLines = null
+    let retrievedTexts = []
     if (knowledge && query) {
       try {
         const hits = await knowledge.retrieve({ agentId: agentVersion.id, query, topK: 3 })
         if (hits.length) {
           knowledgeLines = hits.map((hit) => `背景资料（${hit.title || '知识片段'}）：${hit.content.slice(0, 500)}`)
+          retrievedTexts = hits.map((hit) => hit.content)
         }
       } catch {
         knowledgeLines = null
@@ -88,6 +108,8 @@ export function createAgentRuntime({
     if (!knowledgeLines) {
       knowledgeLines = docs.map((doc) => `背景资料（${doc.title}）：${doc.content.slice(0, 500)}`)
     }
+    const graph = graphContext(agentVersion, query, matchingNodeIds(agentVersion, retrievedTexts))
+    if (graph) lines.push(`人物图谱：\n${graph}`)
     lines.push(...knowledgeLines)
     return lines.length ? `角色档案：\n${lines.join('\n')}` : ''
   }
