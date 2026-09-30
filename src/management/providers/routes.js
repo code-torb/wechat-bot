@@ -16,6 +16,7 @@ export function registerProviderRoutes(app, { db }) {
           id: row.id,
           name: row.name,
           baseUrl: row.base_url,
+          embeddingModel: row.embedding_model,
           capabilities: JSON.parse(row.capability_json),
           enabled: Boolean(row.enabled),
         })),
@@ -33,6 +34,7 @@ export function registerProviderRoutes(app, { db }) {
             properties: {
               name: { type: 'string', minLength: 1, maxLength: 64 },
               baseUrl: { type: 'string', minLength: 1, maxLength: 500 },
+              embeddingModel: { type: 'string', maxLength: 120 },
               capabilities: { type: 'array', items: { type: 'string' } },
               enabled: { type: 'boolean' },
             },
@@ -45,17 +47,18 @@ export function registerProviderRoutes(app, { db }) {
           const id = randomUUID()
           const now = Date.now()
           db.prepare(
-            'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+            'INSERT INTO providers (id, name, base_url, embedding_model, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)',
           ).run(
             id,
             request.body.name,
             baseUrl,
+            (request.body.embeddingModel || '').trim(),
             JSON.stringify(request.body.capabilities || []),
             request.body.enabled === undefined || request.body.enabled ? 1 : 0,
             now,
             now,
           )
-          return reply.code(201).send({ data: { id, name: request.body.name, baseUrl } })
+          return reply.code(201).send({ data: { id, name: request.body.name, baseUrl, embeddingModel: (request.body.embeddingModel || '').trim() } })
         } catch (error) {
           return reply.code(422).send({ error: { code: 'VALIDATION', message: error.message } })
         }

@@ -25,16 +25,25 @@ function serializeKnowledge(row) {
   }
 }
 
-export function createAgentProfileService({ db, service, audit, complete, getCredential, getProvider }) {
+export function createAgentProfileService({ db, service, audit, complete, getCredential, getProvider, knowledge }) {
   async function generateRelationDoc({ agentVersion, personName, relation }) {
     if (!complete || !getCredential || !getProvider) throw new Error('model is not configured')
     const credentialRow = getCredential(agentVersion.model.credentialRef)
     const providerRow = getProvider(agentVersion.model.providerId)
     if (!credentialRow || !providerRow) throw new Error('model credential or provider is unavailable')
     const attributes = agentVersion.attributes || {}
-    const docs = db
-      .prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC LIMIT 3')
-      .all(agentVersion.id)
+    let docs = []
+    if (knowledge) {
+      try {
+        const hits = await knowledge.retrieve({ agentId: agentVersion.id, query: personName, topK: 3 })
+        docs = hits.map((hit) => ({ title: hit.title, content: hit.content }))
+      } catch {
+        docs = []
+      }
+    }
+    if (!docs.length) {
+      docs = db.prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC LIMIT 3').all(agentVersion.id)
+    }
     const info = [
       `角色基本信息：${JSON.stringify(attributes)}`,
       `背景故事：${(agentVersion.prompt || '').slice(0, 1500)}`,
@@ -162,7 +171,7 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
     listKnowledgeDocs(agentId) {
       return db.prepare('SELECT * FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC').all(agentId).map(serializeKnowledge)
     },
-    addKnowledgeDoc({ agentId, title, content, actorId }) {
+    async addKnowledgeDoc({ agentId, title, content, actorId }) {
       const cleanTitle = typeof title === 'string' ? title.trim() : ''
       const cleanContent = typeof content === 'string' ? content.trim() : ''
       if (!cleanTitle) throw new Error('title is required')
@@ -180,10 +189,14 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
         now,
         now,
       )
+      if (knowledge) {
+        await knowledge.indexDocument({ agentId, docId: id, title: cleanTitle, content: cleanContent })
+      }
       auditAction(actorId, 'agent.knowledge_add', agentId, id)
       return serializeKnowledge(db.prepare('SELECT * FROM agent_knowledge_docs WHERE id = ?').get(id))
     },
     removeKnowledgeDoc({ agentId, docId, actorId }) {
+      if (knowledge) knowledge.removeDocument({ docId })
       db.prepare('DELETE FROM agent_knowledge_docs WHERE id = ? AND agent_id = ?').run(docId, agentId)
       auditAction(actorId, 'agent.knowledge_delete', agentId, docId)
     },

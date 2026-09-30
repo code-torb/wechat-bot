@@ -37,7 +37,7 @@ export function registerCredentialRoutes(app, { db, secretStore }) {
             required: ['providerId', 'purpose', 'value'],
             properties: {
               providerId: { type: 'string' },
-              purpose: { type: 'string', enum: ['model', 'search'] },
+              purpose: { type: 'string', enum: ['model', 'search', 'embedding'] },
               value: { type: 'string', minLength: 1, maxLength: 4096 },
               enabled: { type: 'boolean' },
             },

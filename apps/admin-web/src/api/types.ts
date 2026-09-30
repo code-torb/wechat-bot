@@ -153,7 +153,7 @@ export type Credential = {
   updatedAt: number
 }
 
-export type Provider = { id: string; name: string; baseUrl: string; capabilities: string[]; enabled: boolean }
+export type Provider = { id: string; name: string; baseUrl: string; embeddingModel: string; capabilities: string[]; enabled: boolean }
 
 export type MemeAsset = { id: string; mime: string; bytes: number; tags: string[]; enabled: boolean; createdAt: number }
 

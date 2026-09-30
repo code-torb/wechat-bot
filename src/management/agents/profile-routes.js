@@ -166,7 +166,7 @@ export function registerProfileRoutes(app, { service, profileService }) {
       if (!service.get(request.params.id)) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'agent not found' } })
       try {
         const content = Buffer.from(request.body.dataBase64, 'base64').toString('utf8')
-        const data = profileService.addKnowledgeDoc({
+        const data = await profileService.addKnowledgeDoc({
           agentId: request.params.id,
           title: request.body.title,
           content,

@@ -6,6 +6,8 @@ import { SecretStore } from './secrets/store.js'
 import { createAgentService } from './agents/service.js'
 import { upgradeUntouchedDefaultRole } from './agents/default-role.js'
 import { createAgentProfileService } from './agents/profile-service.js'
+import { createEmbeddingClient } from './knowledge/embedding-client.js'
+import { createKnowledgeIndexer } from './knowledge/indexer.js'
 import { createAuditStore } from './audit/store.js'
 import { createStyleRepository } from './styles/repository.js'
 import { createQQRuleRepository } from './qq/rules.js'
@@ -79,7 +81,9 @@ const tools = createToolRegistry({ db, policyEngine, searchWeb, memes })
 const getCredential = (credentialRef) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(credentialRef)
 const getProvider = (providerId) => db.prepare('SELECT * FROM providers WHERE id = ?').get(providerId)
 const modelClient = secretStore ? createModelClient({ secretStore }) : null
-const profileService = createAgentProfileService({ db, service, audit, complete: modelClient, getCredential, getProvider })
+const embedding = createEmbeddingClient({ db, secretStore })
+const knowledge = embedding ? createKnowledgeIndexer({ db, embedding }) : null
+const profileService = createAgentProfileService({ db, service, audit, complete: modelClient, getCredential, getProvider, knowledge })
 const app = await createApp({ db, sessions })
 let scheduler = null
 let consumer = null
@@ -133,6 +137,7 @@ if (process.env.ONEBOT_ACCESS_TOKEN && modelClient && secretStore) {
     getProvider,
     refreshStaleRelations: ({ agentId }) => profileService.refreshStaleRelations({ agentId }),
     refreshAllRelations: ({ agentId }) => profileService.refreshAllRelations({ agentId }),
+    knowledge,
     sessionQueue: createSessionQueue(),
   })
   client.on('ready', ({ selfId }) => ensureBotAccount(selfId))

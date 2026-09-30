@@ -18,9 +18,10 @@ export function createAgentRuntime({
   sessionQueue,
   refreshStaleRelations,
   refreshAllRelations,
+  knowledge,
   logger = console,
 }) {
-  function personaContext(agentVersion) {
+  async function personaContext(agentVersion, query) {
     const attributes = agentVersion.attributes || {}
     const lines = []
     const fields = [
@@ -40,14 +41,26 @@ export function createAgentRuntime({
       lines.push(`人物关系（${rel.person_name}）：${rel.context_doc.slice(0, 700)}`)
     }
     const docs = db.prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC').all(agentVersion.id)
-    for (const doc of docs) {
-      lines.push(`背景资料（${doc.title}）：${doc.content.slice(0, 500)}`)
+    let knowledgeLines = null
+    if (knowledge && query) {
+      try {
+        const hits = await knowledge.retrieve({ agentId: agentVersion.id, query, topK: 3 })
+        if (hits.length) {
+          knowledgeLines = hits.map((hit) => `背景资料（${hit.title || '知识片段'}）：${hit.content.slice(0, 500)}`)
+        }
+      } catch {
+        knowledgeLines = null
+      }
     }
+    if (!knowledgeLines) {
+      knowledgeLines = docs.map((doc) => `背景资料（${doc.title}）：${doc.content.slice(0, 500)}`)
+    }
+    lines.push(...knowledgeLines)
     return lines.length ? `角色档案：\n${lines.join('\n')}` : ''
   }
 
-  function buildSystem(agentVersion) {
-    const persona = personaContext(agentVersion)
+  async function buildSystem(agentVersion, query) {
+    const persona = await personaContext(agentVersion, query)
     const prompt = persona ? `${persona}\n\n${agentVersion.prompt}` : agentVersion.prompt
     return compileStyles({
       prompt,
@@ -170,7 +183,7 @@ export function createAgentRuntime({
         return { text: result.text, immediate: true, requiredCapabilities: ['chat'] }
       }
       if (result.type === 'model_task') {
-        const system = buildSystem(agentVersion)
+        const system = await buildSystem(agentVersion, text)
         const contextMessages = conversations.getContext({ conversationId, epoch, maxTurns: agentVersion.styleValues?.length ? 10 : 10 })
         const userText = result.template.replace('{args}', result.args)
         const reply = await completeForAgent([{ role: 'system', content: system }, ...contextMessages, { role: 'user', content: userText }])
@@ -190,7 +203,7 @@ export function createAgentRuntime({
       }
     }
 
-    const system = buildSystem(agentVersion)
+    const system = await buildSystem(agentVersion, text)
     let messages = [
       { role: 'system', content: system },
       ...conversations.getContext({ conversationId, epoch, maxTurns: 10 }),

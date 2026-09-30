@@ -629,3 +629,67 @@ test('/refresh manually refreshes all relations and replies', async (t) => {
   await queuedTask()
   assert.equal(replyText, '已更新 2 位人物关系上下文。')
 })
+
+test('knowledge retrieval injects only matched chunks when configured', async (t) => {
+  const { db, router, conversations, agent } = fixture(t)
+  const now = Date.now()
+  db.prepare('INSERT INTO agent_knowledge_docs (id, agent_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+    'doc-a',
+    agent.id,
+    '上海往事',
+    '她在出版社工作。',
+    now,
+    now,
+  )
+  db.prepare('INSERT INTO agent_knowledge_docs (id, agent_id, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+    'doc-b',
+    agent.id,
+    '童年',
+    '她小时候住在乡下。',
+    now,
+    now,
+  )
+  const knowledge = {
+    retrieve: async ({ query }) => (query === '你记得出版社吗' ? [{ title: '上海往事', content: '她在出版社工作。', score: 0.9 }] : []),
+  }
+  let queuedTask
+  let system
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule() {},
+      cancelForConversation() {},
+    },
+    complete: async ({ messages }) => {
+      system = messages[0].content
+      return { text: '回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    knowledge,
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'knowledge-1',
+    text: '你记得出版社吗',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.match(system, /背景资料（上海往事）：她在出版社工作。/)
+  assert.doesNotMatch(system, /童年/)
+})

@@ -62,6 +62,7 @@ test('relations upsert, refresh and delete round trip', async (t) => {
   const created = profileService.upsertRelation({ agentId, personName: '周叙', relation: '丈夫，习惯独自决定家里大事', actorId: 'owner-1' })
   assert.equal(created.personName, '周叙')
   assert.equal(created.contextDoc, '')
+  db.prepare('UPDATE agent_relations SET updated_at = ? WHERE id = ?').run(created.updatedAt - 1, created.id)
   const refreshed = await profileService.refreshRelation({ agentId, relationId: created.id })
   assert.match(refreshed.contextDoc, /^生成：/)
   assert.ok(refreshed.updatedAt > created.updatedAt)
@@ -83,10 +84,10 @@ test('refreshStaleRelations only refreshes relations older than 12 hours', async
   assert.equal(db.prepare('SELECT context_doc FROM agent_relations WHERE id = ?').get(fresh.id).context_doc, '')
 })
 
-test('knowledge docs add, list and remove', (t) => {
+test('knowledge docs add, list and remove', async (t) => {
   const { db, service, profileService } = fixture(t)
   const agentId = publishedAgent(t, { db, service })
-  const doc = profileService.addKnowledgeDoc({
+  const doc = await profileService.addKnowledgeDoc({
     agentId,
     title: '上海往事',
     content: '她年轻时在出版社工作，婚后把重心放回家庭。',
@@ -96,6 +97,41 @@ test('knowledge docs add, list and remove', (t) => {
   assert.equal(profileService.listKnowledgeDocs(agentId).length, 1)
   profileService.removeKnowledgeDoc({ agentId, docId: doc.id, actorId: 'owner-1' })
   assert.equal(profileService.listKnowledgeDocs(agentId).length, 0)
+})
+
+test('upload indexes chunks and relation refresh uses retrieved knowledge', async (t) => {
+  const { db, service } = fixture(t)
+  const agentId = publishedAgent(t, { db, service })
+  const calls = { indexed: 0, retrieved: 0, removed: 0 }
+  const knowledge = {
+    indexDocument: async () => {
+      calls.indexed += 1
+    },
+    removeDocument: () => {
+      calls.removed += 1
+    },
+    retrieve: async () => {
+      calls.retrieved += 1
+      return [{ title: '上海往事', content: '她在出版社工作。' }]
+    },
+  }
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async ({ messages }) => ({ text: `生成：${String(messages.at(-1).content).slice(0, 300)}`, toolCalls: [] }),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    knowledge,
+  })
+  const doc = await profileService.addKnowledgeDoc({ agentId, title: '往事', content: '她在出版社工作。', actorId: 'owner-1' })
+  assert.equal(calls.indexed, 1)
+  const rel = profileService.upsertRelation({ agentId, personName: '周叙', relation: '', actorId: 'owner-1' })
+  const refreshed = await profileService.refreshRelation({ agentId, relationId: rel.id })
+  assert.equal(calls.retrieved, 1)
+  assert.match(refreshed.contextDoc, /上海往事/)
+  profileService.removeKnowledgeDoc({ agentId, docId: doc.id, actorId: 'owner-1' })
+  assert.equal(calls.removed, 1)
 })
 
 test('createFromStory parses a first-person story into an Agent draft', (t) => {
