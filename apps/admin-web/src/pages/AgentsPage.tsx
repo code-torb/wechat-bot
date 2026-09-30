@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Modal, Space, Table, Tag, message } from 'antd'
+import { Button, Input, Modal, Popconfirm, Radio, Space, Table, Tag, message } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Agent } from '../api/types'
+
+type StoryCharacter = { name: string; reason: string }
 
 export default function AgentsPage() {
   const navigate = useNavigate()
@@ -11,6 +13,8 @@ export default function AgentsPage() {
   const [storyOpen, setStoryOpen] = useState(false)
   const [storyNameHint, setStoryNameHint] = useState('')
   const [storyFile, setStoryFile] = useState<{ base64: string; fileName: string } | null>(null)
+  const [characters, setCharacters] = useState<StoryCharacter[]>([])
+  const [selectedCharacter, setSelectedCharacter] = useState<string | undefined>()
   const queryClient = useQueryClient()
   const { data } = useQuery({
     queryKey: ['agents'],
@@ -28,11 +32,32 @@ export default function AgentsPage() {
     },
     onError: (error) => message.error(error instanceof Error ? error.message : '创建失败'),
   })
+  const analyzeStory = useMutation({
+    mutationFn: () =>
+      api<{ characters: StoryCharacter[] }>('/api/v1/agents/story/analyze', {
+        method: 'POST',
+        body: { dataBase64: storyFile?.base64, fileName: storyFile?.fileName },
+      }),
+    onSuccess: (result) => {
+      setCharacters(result.data.characters)
+      setSelectedCharacter(undefined)
+      if (result.data.characters.length) {
+        message.success(`识别到 ${result.data.characters.length} 位人物，请选择要创建的角色`)
+      } else {
+        message.warning('没有识别到人物，请手动填写角色名')
+      }
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '分析失败'),
+  })
   const createFromStory = useMutation({
     mutationFn: async () => {
       const result = await api<Agent>('/api/v1/agents/from-story', {
         method: 'POST',
-        body: { dataBase64: storyFile?.base64, fileName: storyFile?.fileName, nameHint: storyNameHint },
+        body: {
+          dataBase64: storyFile?.base64,
+          fileName: storyFile?.fileName,
+          characterName: selectedCharacter || storyNameHint,
+        },
       })
       return result.data
     },
@@ -40,12 +65,23 @@ export default function AgentsPage() {
       setStoryOpen(false)
       setStoryFile(null)
       setStoryNameHint('')
+      setCharacters([])
+      setSelectedCharacter(undefined)
       queryClient.invalidateQueries({ queryKey: ['agents'] })
-      message.success('已根据小说创建角色，请继续完善并发布')
+      message.success('已根据小说创建角色：原文已入库，人物关系已生成图谱')
       navigate(`/agents/${result.id}`)
     },
     onError: (error) => message.error(error instanceof Error ? error.message : '创建失败'),
   })
+  const removeAgent = useMutation({
+    mutationFn: (agentId: string) => api(`/api/v1/agents/${agentId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      message.success('Agent 已删除')
+      queryClient.invalidateQueries({ queryKey: ['agents'] })
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '删除失败'),
+  })
+  const canCreateFromStory = Boolean(storyFile?.base64 && (selectedCharacter || storyNameHint.trim()))
   return (
     <div className='page'>
       <Space style={{ marginBottom: 12 }}>
@@ -66,6 +102,20 @@ export default function AgentsPage() {
           { title: '模型', render: (_, row) => row.draft?.model?.name || '未配置' },
           { title: '版本', dataIndex: 'revision' },
           { title: '已发布', dataIndex: 'publishedVersionId', render: (value) => (value ? '是' : '否') },
+          {
+            title: '操作',
+            render: (_, row) => (
+              <Popconfirm
+                title='确认删除该 Agent？'
+                description='已绑定 QQ 的 Agent 无法删除，需先解除绑定。'
+                onConfirm={() => removeAgent.mutate(row.id)}
+              >
+                <Button size='small' danger onClick={(event) => event.stopPropagation()} loading={removeAgent.isPending}>
+                  删除
+                </Button>
+              </Popconfirm>
+            ),
+          },
         ]}
       />
       <Modal
@@ -74,14 +124,14 @@ export default function AgentsPage() {
         onCancel={() => setStoryOpen(false)}
         onOk={() => createFromStory.mutate()}
         okText='创建角色'
-        okButtonProps={{ disabled: !storyFile?.base64, loading: createFromStory.isPending }}
+        okButtonProps={{ disabled: !canCreateFromStory, loading: createFromStory.isPending }}
       >
         <p className='muted'>
-          上传小说原文 txt。系统会提取角色姓名、出生日期、性别、职业、爱好等属性，并用原文开头作为背景故事草稿，之后可继续编辑。
+          上传小说原文 txt。系统先调用模型识别主要人物，你选择角色后创建：提炼该角色的经历与信息、把小说原文存入知识库、识别人物关系并生成知识图谱。
         </p>
         <Input
           aria-label='角色名提示'
-          placeholder='角色名（可选，解析失败时使用）'
+          placeholder='角色名（可选，模型未识别到或想手动指定时使用）'
           value={storyNameHint}
           onChange={(event) => setStoryNameHint(event.target.value)}
           style={{ marginBottom: 10 }}
@@ -97,14 +147,33 @@ export default function AgentsPage() {
             reader.onload = () => {
               const dataUrl = String(reader.result || '')
               setStoryFile({ base64: dataUrl.split(',')[1] || '', fileName: file.name })
+              setCharacters([])
+              setSelectedCharacter(undefined)
             }
             reader.readAsDataURL(file)
           }}
         />
         {storyFile && (
-          <p className='muted' style={{ marginTop: 8 }}>
-            已选择：{storyFile.fileName}
-          </p>
+          <Space style={{ marginTop: 10, display: 'flex' }}>
+            <span className='muted'>已选择：{storyFile.fileName}</span>
+            <Button size='small' loading={analyzeStory.isPending} onClick={() => analyzeStory.mutate()}>
+              分析角色
+            </Button>
+          </Space>
+        )}
+        {characters.length > 0 && (
+          <Radio.Group
+            style={{ display: 'grid', gap: 8, marginTop: 14 }}
+            value={selectedCharacter}
+            onChange={(event) => setSelectedCharacter(event.target.value)}
+          >
+            {characters.map((character) => (
+              <Radio key={character.name} value={character.name}>
+                {character.name}
+                {character.reason ? `（${character.reason}）` : ''}
+              </Radio>
+            ))}
+          </Radio.Group>
         )}
       </Modal>
     </div>

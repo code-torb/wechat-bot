@@ -329,10 +329,10 @@ export function createAgentService({ db, audit }) {
     remove({ agentId, actorId }) {
       const agent = repo.get(agentId)
       if (!agent) throw new ConflictError('agent not found')
-      if (agent.published_version_id) throw new ValidationError('published agents must be archived first')
       if (repo.bindingCount(agentId) > 0) throw new ValidationError('agent is still bound to QQ routes')
       db.transaction(() => {
         db.prepare('DELETE FROM agent_style_values WHERE agent_id = ?').run(agentId)
+        db.prepare('DELETE FROM agent_versions WHERE agent_id = ?').run(agentId)
         repo.hardDelete(agentId)
       })()
       audit.record({

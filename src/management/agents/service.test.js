@@ -162,3 +162,13 @@ test('bound agents cannot be deleted and archived agents stop publishing', (t) =
   assert.equal(service.get(agent.id).status, 'archived')
   assert.throws(() => service.publish({ agentId: agent.id, expectedRevision: service.get(agent.id).revision, actorId: 'a' }), /archived/)
 })
+
+test('published agents can be deleted together with their version history', (t) => {
+  const { service } = fixture(t)
+  const agent = service.create({ name: '助手' })
+  service.updateDraft({ agentId: agent.id, draft: goodDraft, expectedRevision: 1, actorId: 'a' })
+  service.publish({ agentId: agent.id, expectedRevision: 2, actorId: 'a' })
+  assert.equal(service.versions(agent.id).length, 1)
+  service.remove({ agentId: agent.id, actorId: 'a' })
+  assert.equal(service.get(agent.id), undefined)
+})

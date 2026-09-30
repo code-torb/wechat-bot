@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { parseStory } from './story-parser.js'
+import { decodeStory, parseStory } from './story-parser.js'
 
 export const RELATIONS_TTL_MS = 12 * 60 * 60 * 1000
 const MAX_KNOWLEDGE_CHARS = 1000000
@@ -25,11 +25,15 @@ function serializeKnowledge(row) {
   }
 }
 
-function parseGraphJson(text) {
-  const cleaned = String(text || '')
+function stripJsonFence(text) {
+  return String(text || '')
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim()
+}
+
+function parseGraphJson(text) {
+  const cleaned = stripJsonFence(text)
   if (!cleaned) return { persons: [], relations: [] }
   const parsed = JSON.parse(cleaned)
   return {
@@ -38,7 +42,57 @@ function parseGraphJson(text) {
   }
 }
 
+function parseCharactersJson(text) {
+  const cleaned = stripJsonFence(text)
+  if (!cleaned) return []
+  const parsed = JSON.parse(cleaned)
+  return Array.isArray(parsed?.characters) ? parsed.characters : []
+}
+
+function parseCharacterCardJson(text) {
+  const cleaned = stripJsonFence(text)
+  if (!cleaned) return null
+  const parsed = JSON.parse(cleaned)
+  if (!parsed || typeof parsed !== 'object') return null
+  return {
+    name: typeof parsed.name === 'string' ? parsed.name : '',
+    birthDate: typeof parsed.birthDate === 'string' ? parsed.birthDate : '',
+    gender: typeof parsed.gender === 'string' ? parsed.gender : '',
+    occupation: typeof parsed.occupation === 'string' ? parsed.occupation : '',
+    hobbies: typeof parsed.hobbies === 'string' ? parsed.hobbies : '',
+    background: typeof parsed.background === 'string' ? parsed.background : '',
+  }
+}
+
 export function createAgentProfileService({ db, service, audit, complete, getCredential, getProvider, knowledge }) {
+  function defaultModelConfig() {
+    const credential = db
+      .prepare(
+        `SELECT c.* FROM credentials c JOIN providers p ON p.id = c.provider_id
+         WHERE c.purpose = 'model' AND c.enabled = 1 AND p.enabled = 1 ORDER BY c.updated_at DESC LIMIT 1`,
+      )
+      .get()
+    if (!credential) return null
+    const provider = db.prepare('SELECT * FROM providers WHERE id = ?').get(credential.provider_id)
+    const agent = db
+      .prepare("SELECT draft_json FROM agents WHERE json_extract(draft_json, '$.model.name') != '' ORDER BY updated_at DESC LIMIT 1")
+      .get()
+    const modelName = agent ? JSON.parse(agent.draft_json).model.name : ''
+    if (!modelName) return null
+    return { credentialRow: credential, providerRow: provider, modelName }
+  }
+
+  async function storyComplete(messages) {
+    if (!complete) throw new Error('model is not configured')
+    const config = defaultModelConfig()
+    if (!config) throw new Error('model is not configured')
+    return complete({
+      provider: { ...config.providerRow, modelName: config.modelName },
+      credentialRow: config.credentialRow,
+      messages,
+    })
+  }
+
   async function generateRelationDoc({ agentVersion, personName, relation }) {
     if (!complete || !getCredential || !getProvider) throw new Error('model is not configured')
     const credentialRow = getCredential(agentVersion.model.credentialRef)
@@ -91,47 +145,23 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
     })
   }
 
-  async function extractGraph({ agentId }) {
-    if (!complete || !getCredential || !getProvider) return { nodes: [], edges: [] }
-    const agentVersion = service.getPublished(agentId)
-    if (!agentVersion) return { nodes: [], edges: [] }
-    const credentialRow = getCredential(agentVersion.model.credentialRef)
-    const providerRow = getProvider(agentVersion.model.providerId)
-    if (!credentialRow || !providerRow) return { nodes: [], edges: [] }
-    const attributes = agentVersion.attributes || {}
-    let docs = []
-    if (knowledge) {
-      try {
-        docs = await knowledge.retrieve({ agentId, query: '人物关系和经历', topK: 3 })
-      } catch {
-        docs = []
-      }
-    }
-    const material = [
-      `角色基本信息：${JSON.stringify(attributes)}`,
-      `背景故事：${(agentVersion.prompt || '').slice(0, 2000)}`,
-      `知识库资料：${docs.map((doc) => `${doc.title}：${doc.content.slice(0, 800)}`).join('\n')}`,
-    ].join('\n')
-    const result = await complete({
-      provider: { ...(providerRow || {}), modelName: agentVersion.model.name },
-      credentialRow,
-      messages: [
-        {
-          role: 'system',
-          content: '你负责从人物资料中抽取人物和人物关系，只输出 JSON，不输出其他内容。',
-        },
-        {
-          role: 'user',
-          content: `${material}\n\n请输出 JSON：{"persons":[{"name":"人物名","summary":"人物摘要","attributes":{}}],"relations":[{"source":"人物A","target":"人物B","type":"关系类型","description":"关系描述","boundary":"相处边界"}]}。要求：人物名必须来自资料原文；最多列出 10 个关键人物；关系 type 用简短词，如 丈夫、同事、朋友。`,
-        },
-      ],
-    })
+  async function writeGraphFromMaterial({ agentId, material, actorId }) {
+    if (!complete) return { nodes: [], edges: [] }
+    const result = await storyComplete([
+      {
+        role: 'system',
+        content: '你负责从人物资料中抽取人物和人物关系，只输出 JSON，不输出其他内容。',
+      },
+      {
+        role: 'user',
+        content: `${material}\n\n请输出 JSON：{"persons":[{"name":"人物名","summary":"人物摘要","attributes":{}}],"relations":[{"source":"人物A","target":"人物B","type":"关系类型","description":"关系描述","boundary":"相处边界"}]}。要求：人物名必须来自资料原文；最多列出 10 个关键人物；关系 type 用简短词，如 丈夫、同事、朋友。`,
+      },
+    ])
     const graph = parseGraphJson(result?.text)
     const valid = new Set()
     for (const person of graph.persons) {
       if (typeof person?.name === 'string' && person.name && material.includes(person.name)) valid.add(person.name)
     }
-    if (typeof attributes.name === 'string' && attributes.name) valid.add(attributes.name)
     const now = Date.now()
     const upsertNode = db.prepare(
       `INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -150,9 +180,6 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
           now,
           now,
         )
-      }
-      if (attributes.name && !nodeId(attributes.name)) {
-        upsertNode.run(randomUUID(), agentId, attributes.name, JSON.stringify(attributes), '', now, now)
       }
       const upsertEdge = db.prepare(
         `INSERT INTO character_edges (id, agent_id, source_id, target_id, relation_type, description, boundary, created_at, updated_at)
@@ -180,6 +207,27 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
       }
     })()
     return graphRows(agentId)
+  }
+
+  async function extractGraph({ agentId }) {
+    const agentVersion = service.getPublished(agentId)
+    if (!agentVersion) return { nodes: [], edges: [] }
+    const attributes = agentVersion.attributes || {}
+    let docs = []
+    if (knowledge) {
+      try {
+        docs = await knowledge.retrieve({ agentId, query: '人物关系和经历', topK: 3 })
+      } catch {
+        docs = []
+      }
+    }
+    const material = [
+      `主角：${attributes.name || ''}`,
+      `角色基本信息：${JSON.stringify(attributes)}`,
+      `背景故事：${(agentVersion.prompt || '').slice(0, 2000)}`,
+      `知识库资料：${docs.map((doc) => `${doc.title}：${doc.content.slice(0, 800)}`).join('\n')}`,
+    ].join('\n')
+    return writeGraphFromMaterial({ agentId, material })
   }
 
   function graphRows(agentId) {
@@ -336,25 +384,77 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
       db.prepare('DELETE FROM agent_knowledge_docs WHERE id = ? AND agent_id = ?').run(docId, agentId)
       auditAction(actorId, 'agent.knowledge_delete', agentId, docId)
     },
-    createFromStory({ dataBase64, fileName, nameHint, actorId }) {
-      const parsed = parseStory({ dataBase64, fileName, nameHint })
-      const agent = service.create({ name: parsed.name || '小说角色', description: '由小说原文创建', actorId })
+    async analyzeStory({ dataBase64, fileName, nameHint }) {
+      const text = decodeStory(dataBase64)
+      let characters = []
+      if (complete) {
+        try {
+          const result = await storyComplete([
+            { role: 'system', content: '你是小说人物识别器，只输出 JSON，不输出其他内容。' },
+            {
+              role: 'user',
+              content: `以下是小说开头：\n${text.slice(0, 6000)}\n\n请列出主要人物，最多 8 个，输出 JSON：{"characters":[{"name":"人物名","reason":"一句话说明角色分量"}]}。人物名必须来自原文。`,
+            },
+          ])
+          characters = parseCharactersJson(result?.text)
+            .filter((item) => typeof item?.name === 'string' && item.name && text.includes(item.name))
+            .map((item) => ({ name: item.name.trim(), reason: typeof item.reason === 'string' ? item.reason : '' }))
+        } catch {
+          characters = []
+        }
+      }
+      if (!characters.length) {
+        const fallback = parseStory({ dataBase64, fileName, nameHint })
+        if (fallback.name) characters = [{ name: fallback.name, reason: '由文本规则提取' }]
+      }
+      return { characters }
+    },
+    async createFromStory({ dataBase64, fileName, characterName, nameHint, actorId }) {
+      const text = decodeStory(dataBase64)
+      const chosen =
+        typeof characterName === 'string' && characterName.trim() ? characterName.trim() : typeof nameHint === 'string' ? nameHint.trim() : ''
+      let card = null
+      if (complete && chosen) {
+        try {
+          const result = await storyComplete([
+            { role: 'system', content: '你是小说人物提炼器，只输出 JSON，不输出其他内容。' },
+            {
+              role: 'user',
+              content: `以下是小说原文开头：\n${text.slice(0, 10000)}\n\n请提炼小说人物“${chosen}”的角色卡，输出 JSON：{"name":"姓名","birthDate":"出生日期或空","gender":"性别或空","occupation":"职业或空","hobbies":"爱好或空","background":"300字左右的人物经历故事，使用第三人称"}。姓名必须与原文一致。`,
+            },
+          ])
+          const parsedCard = parseCharacterCardJson(result?.text)
+          card = parsedCard && (!parsedCard.name || !text.includes(parsedCard.name)) ? null : parsedCard
+        } catch {
+          card = null
+        }
+      }
+      const parsed = parseStory({ dataBase64, fileName, nameHint: chosen })
+      const name = card?.name || parsed.name || chosen || '小说角色'
+      const background = card?.background || parsed.background
+      const attributes = {
+        name,
+        birthDate: card?.birthDate || parsed.birthDate,
+        gender: card?.gender || parsed.gender,
+        occupation: card?.occupation || parsed.occupation,
+        hobbies: card?.hobbies || parsed.hobbies,
+      }
+      const agent = service.create({ name, description: '由小说原文创建', actorId })
       service.updateDraft({
         agentId: agent.id,
-        draft: {
-          name: parsed.name || '小说角色',
-          prompt: parsed.background,
-          attributes: {
-            name: parsed.name,
-            birthDate: parsed.birthDate,
-            gender: parsed.gender,
-            occupation: parsed.occupation,
-            hobbies: parsed.hobbies,
-          },
-        },
+        draft: { name, prompt: background, attributes },
         expectedRevision: 1,
         actorId,
       })
+      const title = (fileName || '').replace(/\.(txt|TXT)$/, '') || '小说原文'
+      const chars = Array.from(text)
+      const knowledgeContent = chars.length > MAX_KNOWLEDGE_CHARS ? chars.slice(0, MAX_KNOWLEDGE_CHARS).join('') : text
+      await this.addKnowledgeDoc({ agentId: agent.id, title, content: knowledgeContent, actorId })
+      await writeGraphFromMaterial({
+        agentId: agent.id,
+        material: `主角：${name}\n提炼经历：${background}\n\n小说原文片段：\n${text.slice(0, 6000)}`,
+        actorId,
+      }).catch(() => null)
       auditAction(actorId, 'agent.create_from_story', agent.id)
       return service.get(agent.id)
     },

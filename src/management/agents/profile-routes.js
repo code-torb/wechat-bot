@@ -198,7 +198,7 @@ export function registerProfileRoutes(app, { service, profileService }) {
   })
 
   app.post(
-    '/api/v1/agents/from-story',
+    '/api/v1/agents/story/analyze',
     {
       schema: {
         body: {
@@ -217,10 +217,44 @@ export function registerProfileRoutes(app, { service, profileService }) {
       await requireCapability({ resourceType: 'agents', operation: 'write:agents' })(request, reply)
       if (reply.sent) return
       try {
-        const agent = profileService.createFromStory({
+        const data = await profileService.analyzeStory({
           dataBase64: request.body.dataBase64,
           fileName: request.body.fileName || '',
           nameHint: request.body.nameHint || '',
+        })
+        return { data }
+      } catch (error) {
+        return reply.code(422).send({ error: { code: 'VALIDATION', message: error.message } })
+      }
+    },
+  )
+
+  app.post(
+    '/api/v1/agents/from-story',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['dataBase64'],
+          additionalProperties: false,
+          properties: {
+            dataBase64: { type: 'string', minLength: 1 },
+            fileName: { type: 'string', maxLength: 200 },
+            nameHint: { type: 'string', maxLength: 80 },
+            characterName: { type: 'string', maxLength: 80 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      await requireCapability({ resourceType: 'agents', operation: 'write:agents' })(request, reply)
+      if (reply.sent) return
+      try {
+        const agent = await profileService.createFromStory({
+          dataBase64: request.body.dataBase64,
+          fileName: request.body.fileName || '',
+          nameHint: request.body.nameHint || '',
+          characterName: request.body.characterName || '',
           actorId: request.auth.user.userId,
         })
         return reply.code(201).send({ data: serializeAgent(agent) })

@@ -373,6 +373,25 @@ test('profile APIs manage relations, knowledge and story creation', async (t) =>
   assert.equal(story.statusCode, 201, story.body)
   assert.equal(story.json().data.draft.attributes.name, '沈宁')
   assert.equal(story.json().data.draft.attributes.occupation, '设计师')
+  const analysis = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agents/story/analyze',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers,
+    payload: {
+      dataBase64: Buffer.from('我叫沈宁，生于1992年，是一个女生。后来我做了设计师，平时喜欢跑步。').toString('base64'),
+      fileName: '沈宁.txt',
+    },
+  })
+  assert.equal(analysis.statusCode, 200, analysis.body)
+  assert.ok(analysis.json().data.characters.some((item) => item.name === '沈宁'))
+  const removed = await app.inject({
+    method: 'DELETE',
+    url: `/api/v1/agents/${story.json().data.id}`,
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: { 'x-csrf-token': csrf },
+  })
+  assert.equal(removed.statusCode, 200, removed.body)
 })
 
 test('mutations without csrf token are rejected', async (t) => {

@@ -192,12 +192,12 @@ test('refreshAllRelations extracts a validated character graph first', async (t)
   assert.ok(calls.length >= 2)
 })
 
-test('createFromStory parses a first-person story into an Agent draft', (t) => {
+test('createFromStory parses a first-person story into an Agent draft', async (t) => {
   const { db, service, profileService } = fixture(t)
   const text = `我叫沈宁，生于1992年，是一个男生。我大学读的是建筑，后来做了设计师。空闲时我喜欢跑步和摄影。
 第一章
 沈宁在深圳租了一间小公寓。`
-  const agent = profileService.createFromStory({
+  const agent = await profileService.createFromStory({
     dataBase64: Buffer.from(text).toString('base64'),
     fileName: '沈宁.txt',
     nameHint: '',
@@ -210,4 +210,90 @@ test('createFromStory parses a first-person story into an Agent draft', (t) => {
   assert.equal(draft.attributes.occupation, '设计师')
   assert.match(draft.attributes.hobbies, /跑步和摄影/)
   assert.match(draft.prompt, /沈宁在深圳/)
+})
+
+test('analyzeStory returns model-recognized characters and falls back to rules', async (t) => {
+  const { db, service } = fixture(t)
+  publishedAgent(t, { db, service })
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async () => ({
+      text: JSON.stringify({
+        characters: [
+          { name: '林安宁', reason: '主角' },
+          { name: '周叙', reason: '丈夫' },
+        ],
+      }),
+      toolCalls: [],
+    }),
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
+  const story = '我叫林安宁，婚后生活围绕儿子和家庭。周叙是她的丈夫。'
+  const result = await profileService.analyzeStory({
+    dataBase64: Buffer.from(story).toString('base64'),
+    fileName: '林安宁.txt',
+  })
+  assert.ok(result.characters.some((item) => item.name === '林安宁'))
+  assert.ok(result.characters.some((item) => item.name === '周叙'))
+})
+
+test('createFromStory distills the chosen character, stores the story and builds the graph', async (t) => {
+  const { db, service } = fixture(t)
+  publishedAgent(t, { db, service })
+  const calls = []
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async ({ messages }) => {
+      calls.push(String(messages.at(-1).content).slice(0, 30))
+      if (calls.length === 1) {
+        return {
+          text: JSON.stringify({
+            name: '林安宁',
+            birthDate: '1988-05-06',
+            gender: '女',
+            occupation: '编辑',
+            hobbies: '读书',
+            background: '她曾做图书编辑，婚后辞职在家照顾儿子。',
+          }),
+          toolCalls: [],
+        }
+      }
+      return {
+        text: JSON.stringify({
+          persons: [
+            { name: '林安宁', summary: '主角', attributes: {} },
+            { name: '周叙', summary: '丈夫', attributes: {} },
+          ],
+          relations: [{ source: '林安宁', target: '周叙', type: '夫妻', description: '已经分开。' }],
+        }),
+        toolCalls: [],
+      }
+    },
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
+  const story = '我叫林安宁，婚后生活围绕儿子和家庭。周叙是她的丈夫，两人后来分开。'
+  const agent = await profileService.createFromStory({
+    dataBase64: Buffer.from(story).toString('base64'),
+    fileName: '林安宁.txt',
+    characterName: '林安宁',
+    actorId: 'owner-1',
+  })
+  const draft = JSON.parse(agent.draft_json)
+  assert.equal(draft.attributes.name, '林安宁')
+  assert.equal(draft.attributes.occupation, '编辑')
+  assert.match(draft.prompt, /图书编辑/)
+  const docs = db.prepare('SELECT title FROM agent_knowledge_docs WHERE agent_id = ?').all(agent.id)
+  assert.ok(docs.length >= 1)
+  assert.equal(docs[0].title, '林安宁')
+  const graph = profileService.listGraph(agent.id)
+  assert.ok(graph.nodes.some((node) => node.name === '林安宁'))
+  assert.ok(graph.nodes.some((node) => node.name === '周叙'))
+  assert.equal(graph.edges.length, 1)
+  assert.ok(calls.length >= 2)
 })
