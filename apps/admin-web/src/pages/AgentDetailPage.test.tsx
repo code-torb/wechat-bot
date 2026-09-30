@@ -130,3 +130,17 @@ it('offers the historical default Agent a narrative background without publishin
   expect(screen.getByRole('textbox', { name: '角色设定' })).toHaveValue('林安宁年轻时在出版社做编辑，后来回家照顾儿子。')
   expect(requests.some(({ init }) => init?.method === 'POST')).toBe(false)
 })
+
+it('publish is never disabled and missing fields jump to the right tab with a hint', async () => {
+  const requests = renderAgent()
+  await screen.findByRole('textbox', { name: '角色设定' })
+  fireEvent.click(screen.getByRole('tab', { name: '模型' }))
+  const modelName = screen.getByLabelText('模型名')
+  fireEvent.change(modelName, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存并发布' }))
+  expect(await screen.findByText('请填写模型名')).toBeInTheDocument()
+  expect(requests.filter(({ path, init }) => path.endsWith('/publish') && init?.method === 'POST')).toHaveLength(0)
+  fireEvent.change(modelName, { target: { value: 'new-model' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存并发布' }))
+  await waitFor(() => expect(requests.some(({ path, init }) => path.endsWith('/publish') && init?.method === 'POST')).toBe(true))
+})

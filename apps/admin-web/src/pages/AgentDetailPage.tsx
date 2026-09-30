@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Table, Tabs, Tag } from 'antd'
+import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Table, Tabs, Tag, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -45,6 +45,8 @@ export default function AgentDetailPage() {
   const [draft, setDraft] = useState<Agent['draft'] | null>(null)
   const [relationForm, setRelationForm] = useState({ personName: '', relation: '' })
   const [knowledgeForm, setKnowledgeForm] = useState({ title: '', base64: '', fileName: '' })
+  const [activeTab, setActiveTab] = useState('role')
+  const [fieldErrors, setFieldErrors] = useState<{ prompt?: string; modelId?: string; modelName?: string }>({})
   useEffect(() => {
     if (agent) setDraft(agent.draft)
   }, [agent])
@@ -110,7 +112,19 @@ export default function AgentDetailPage() {
   const eligibleStyles = (styles || []).filter((style) => style.ownerAgentId === null || style.ownerAgentId === agent.id)
   const availableStyles = eligibleStyles.filter((style) => style.enabled && !draft.styleValues.some((item) => item.definitionId === style.id))
   const modelId = draft.model?.modelId?.trim() || (draft.model as { providerId?: string }).providerId?.trim() || ''
-  const canPublish = Boolean(draft.prompt.trim() && modelId && draft.model?.name?.trim())
+  const handlePublish = () => {
+    const errors: { prompt?: string; modelId?: string; modelName?: string } = {}
+    if (!draft.prompt.trim()) errors.prompt = '请填写角色背景故事'
+    if (!modelId) errors.modelId = '请选择一个模型'
+    if (!draft.model?.name?.trim()) errors.modelName = '请填写模型名'
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors)
+      setActiveTab(errors.prompt ? 'role' : 'model')
+      message.warning('还有必填项未填写，请补充后重试')
+      return
+    }
+    publish.mutate(draft)
+  }
   const updateModel = (model: Partial<Agent['draft']['model']>) => setDraft({ ...draft, model: { ...draft.model, ...model } })
   const updateAttributes = (attributes: Partial<Agent['draft']['attributes']>) =>
     setDraft({ ...draft, attributes: { ...(draft.attributes || {}), ...attributes } })
@@ -127,14 +141,15 @@ export default function AgentDetailPage() {
           </Space>
         </div>
         <div className='agent-publish-action'>
-          <Button type='primary' onClick={() => publish.mutate(draft)} disabled={!canPublish} loading={publish.isPending}>
+          <Button type='primary' onClick={handlePublish} loading={publish.isPending}>
             保存并发布
           </Button>
           <span>角色、对话设定、模型与命令一次生效</span>
         </div>
       </div>
-      {!canPublish && <p className='agent-publish-hint'>请填写角色背景，以及模型的 Provider ID、凭据引用和模型名后再发布。</p>}
       <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           {
             key: 'role',
@@ -204,9 +219,13 @@ export default function AgentDetailPage() {
                     aria-label='角色设定'
                     rows={9}
                     value={draft.prompt}
-                    onChange={(event) => setDraft({ ...draft, prompt: event.target.value })}
+                    onChange={(event) => {
+                      setDraft({ ...draft, prompt: event.target.value })
+                      if (fieldErrors.prompt) setFieldErrors((prev) => ({ ...prev, prompt: undefined }))
+                    }}
                     placeholder='写下人物的生活经历与故事，例如成长、家庭、工作后的经历……'
                   />
+                  {fieldErrors.prompt && <p className='field-error'>{fieldErrors.prompt}</p>}
                 </div>
                 <div className='agent-detail-section'>
                   <div className='agent-section-heading'>
@@ -497,12 +516,23 @@ export default function AgentDetailPage() {
                       value={modelId || undefined}
                       placeholder='选择模型'
                       options={(models || []).filter((model) => model.enabled).map((model) => ({ value: model.id, label: model.name }))}
-                      onChange={(value) => updateModel({ modelId: value })}
+                      onChange={(value) => {
+                        updateModel({ modelId: value })
+                        if (fieldErrors.modelId) setFieldErrors((prev) => ({ ...prev, modelId: undefined }))
+                      }}
                     />
+                    {fieldErrors.modelId && <p className='field-error'>{fieldErrors.modelId}</p>}
                   </label>
                   <label>
                     模型名
-                    <Input value={draft.model.name} onChange={(event) => updateModel({ name: event.target.value })} />
+                    <Input
+                      value={draft.model.name}
+                      onChange={(event) => {
+                        updateModel({ name: event.target.value })
+                        if (fieldErrors.modelName) setFieldErrors((prev) => ({ ...prev, modelName: undefined }))
+                      }}
+                    />
+                    {fieldErrors.modelName && <p className='field-error'>{fieldErrors.modelName}</p>}
                   </label>
                   <label>
                     工具调用

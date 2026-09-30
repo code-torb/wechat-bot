@@ -57,10 +57,11 @@ test('relations upsert, refresh and delete round trip', async (t) => {
   const created = profileService.upsertRelation({ agentId, personName: '周叙', relation: '丈夫，习惯独自决定家里大事', actorId: 'owner-1' })
   assert.equal(created.personName, '周叙')
   assert.equal(created.contextDoc, '')
-  db.prepare('UPDATE agent_relations SET updated_at = ? WHERE id = ?').run(created.updatedAt - 1000, created.id)
+  const staleAt = created.updatedAt - 1000
+  db.prepare('UPDATE agent_relations SET updated_at = ? WHERE id = ?').run(staleAt, created.id)
   const refreshed = await profileService.refreshRelation({ agentId, relationId: created.id })
   assert.match(refreshed.contextDoc, /^生成：/)
-  assert.ok(refreshed.updatedAt > created.updatedAt)
+  assert.ok(refreshed.updatedAt > staleAt)
   const afterRefresh = profileService.listRelations(agentId)
   assert.equal(afterRefresh[0].contextDoc, refreshed.contextDoc)
   profileService.removeRelation({ agentId, relationId: created.id, actorId: 'owner-1' })

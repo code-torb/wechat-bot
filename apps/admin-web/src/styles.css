@@ -325,6 +325,11 @@ body {
   margin: -4px 0 18px;
   color: #986919;
 }
+.field-error {
+  margin: 6px 0 0;
+  color: #cf1322;
+  font-size: 13px;
+}
 .agent-detail-page .ant-tabs-nav {
   margin-bottom: 16px;
 }

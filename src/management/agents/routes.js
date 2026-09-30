@@ -164,6 +164,7 @@ export function registerAgentRoutes(app, { service }) {
     async (request, reply) => {
       await requireCapability({ resourceType: 'agents', resourceId: request.params.id, operation: 'write:agents' })(request, reply)
       if (reply.sent) return
+      request.resultMessage = '已保存并发布新版本'
       const current = service.get(request.params.id)
       if (!current) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'agent not found' } })
       const expectedRevision = request.body?.expectedRevision ?? Number(request.headers['if-match'])
