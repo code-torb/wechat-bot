@@ -134,6 +134,51 @@ test('upload indexes chunks and relation refresh uses retrieved knowledge', asyn
   assert.equal(calls.removed, 1)
 })
 
+test('refreshAllRelations extracts a validated character graph first', async (t) => {
+  const { db, service } = fixture(t)
+  const agentId = publishedAgent(t, { db, service })
+  const calls = []
+  const profileService = createAgentProfileService({
+    db,
+    service,
+    audit: createAuditStore(db),
+    complete: async ({ messages }) => {
+      calls.push(String(messages.at(-1).content).slice(0, 40))
+      if (calls.length === 1) {
+        return {
+          text: JSON.stringify({
+            persons: [
+              { name: '林安宁', summary: '主角', attributes: { occupation: '编辑' } },
+              { name: '儿子', summary: '孩子' },
+            ],
+            relations: [
+              { source: '林安宁', target: '儿子', type: '母子', description: '她照顾儿子。', boundary: '注意孩子感受。' },
+              { source: '周叙', target: '林安宁', type: '丈夫', description: '无效实体应跳过' },
+            ],
+          }),
+          toolCalls: [],
+        }
+      }
+      return { text: '关系文档', toolCalls: [] }
+    },
+    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+  })
+  profileService.upsertRelation({ agentId, personName: '儿子', relation: '', actorId: 'owner-1' })
+  const updated = await profileService.refreshAllRelations({ agentId, actorId: 'owner-1' })
+  assert.equal(updated, 1)
+  const graph = profileService.listGraph(agentId)
+  assert.ok(graph.nodes.some((node) => node.name === '林安宁'))
+  assert.ok(graph.nodes.some((node) => node.name === '儿子'))
+  assert.equal(
+    graph.nodes.some((node) => node.name === '周叙'),
+    false,
+  )
+  assert.equal(graph.edges.length, 1)
+  assert.equal(graph.edges[0].relationType, '母子')
+  assert.ok(calls.length >= 2)
+})
+
 test('createFromStory parses a first-person story into an Agent draft', (t) => {
   const { db, service, profileService } = fixture(t)
   const text = `我叫沈宁，生于1992年，是一个男生。我大学读的是建筑，后来做了设计师。空闲时我喜欢跑步和摄影。

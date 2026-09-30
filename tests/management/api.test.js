@@ -282,7 +282,7 @@ test('default role background is available to an authorized Agent editor', async
 })
 
 test('profile APIs manage relations, knowledge and story creation', async (t) => {
-  const { app } = await build(t)
+  const { app, db } = await build(t)
   t.after(() => app.close())
   const { cookie, csrf } = await login(app)
   const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf }
@@ -344,6 +344,22 @@ test('profile APIs manage relations, knowledge and story creation', async (t) =>
   assert.equal(profile.json().data.attributes.name, '沈宁')
   assert.equal(profile.json().data.relations.length, 1)
   assert.equal(profile.json().data.knowledgeDocs.length, 1)
+  const graph = await app.inject({
+    method: 'GET',
+    url: `/api/v1/agents/${id}/graph`,
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(graph.statusCode, 200, graph.body)
+  assert.deepEqual(graph.json().data, { nodes: [], edges: [] })
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', '', ?, ?)",
+  ).run('node-a', id, '周叙', Date.now(), Date.now())
+  const graphAfter = await app.inject({
+    method: 'GET',
+    url: `/api/v1/agents/${id}/graph`,
+    cookies: { [SESSION_COOKIE]: cookie },
+  })
+  assert.equal(graphAfter.json().data.nodes.length, 1)
   const story = await app.inject({
     method: 'POST',
     url: '/api/v1/agents/from-story',

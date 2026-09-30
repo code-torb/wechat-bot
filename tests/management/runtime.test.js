@@ -693,3 +693,63 @@ test('knowledge retrieval injects only matched chunks when configured', async (t
   assert.match(system, /背景资料（上海往事）：她在出版社工作。/)
   assert.doesNotMatch(system, /童年/)
 })
+
+test('character graph subgraph is injected around the mentioned person', async (t) => {
+  const { db, router, conversations, agent } = fixture(t)
+  const now = Date.now()
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', ?, ?, ?)",
+  ).run('n-main', agent.id, '林安宁', '主角', now, now)
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', ?, ?, ?)",
+  ).run('n-son', agent.id, '儿子', '孩子', now, now)
+  db.prepare(
+    "INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, '{}', ?, ?, ?)",
+  ).run('n-zhou', agent.id, '周叙', '分居中的丈夫', now, now)
+  db.prepare(
+    'INSERT INTO character_edges (id, agent_id, source_id, target_id, relation_type, description, boundary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run('e-son', agent.id, 'n-main', 'n-son', '母子', '她照顾儿子。', '注意孩子感受。', now, now)
+  db.prepare(
+    'INSERT INTO character_edges (id, agent_id, source_id, target_id, relation_type, description, boundary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run('e-zhou', agent.id, 'n-main', 'n-zhou', '分居的丈夫', '两人已经分开。', '尊重彼此边界。', now, now)
+  let queuedTask
+  let system
+  const runtime = createAgentRuntime({
+    db,
+    conversations,
+    router,
+    commandRegistry: createCommandRegistry({ db }),
+    policyEngine: createPolicyEngine({ db }),
+    scheduler: {
+      schedule() {},
+      cancelForConversation() {},
+    },
+    complete: async ({ messages }) => {
+      system = messages[0].content
+      return { text: '回复', toolCalls: [] }
+    },
+    tools: { execute: async () => ({ status: 'denied' }) },
+    sessionQueue: {
+      enqueue(_key, task) {
+        queuedTask = task
+        return { queued: true }
+      },
+    },
+  })
+  await runtime.accept({
+    botAccountId: 'bot-a',
+    scene: 'group',
+    peerId: '34567',
+    senderId: '23456',
+    messageId: 'graph-1',
+    text: '我是周叙',
+    mentionedSelf: true,
+    privateSubtype: null,
+    connectionGeneration: 1,
+    receivedAt: Date.now(),
+  })
+  await queuedTask()
+  assert.match(system, /人物图谱/)
+  assert.match(system, /林安宁—周叙/)
+  assert.match(system, /林安宁—儿子/)
+})

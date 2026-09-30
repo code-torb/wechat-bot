@@ -21,6 +21,37 @@ export function createAgentRuntime({
   knowledge,
   logger = console,
 }) {
+  function graphContext(agentVersion, query) {
+    const nodes = db.prepare('SELECT id, name FROM character_nodes WHERE agent_id = ?').all(agentVersion.id)
+    if (!nodes.length) return ''
+    const edges = db
+      .prepare(
+        'SELECT id, source_id, target_id, relation_type, description, boundary FROM character_edges WHERE agent_id = ? ORDER BY updated_at DESC',
+      )
+      .all(agentVersion.id)
+    if (!edges.length) return ''
+    const nameById = new Map(nodes.map((node) => [node.id, node.name]))
+    const protagonist = agentVersion.attributes?.name || ''
+    let anchors = nodes.filter((node) => node.name && query && query.includes(node.name)).map((node) => node.id)
+    if (!anchors.length && protagonist) {
+      const node = nodes.find((item) => item.name === protagonist)
+      if (node) anchors = [node.id]
+    }
+    if (!anchors.length && nodes.length) anchors = [nodes[0].id]
+    const hop1 = edges.filter((edge) => anchors.includes(edge.source_id) || anchors.includes(edge.target_id))
+    const hop1Nodes = new Set(hop1.flatMap((edge) => [edge.source_id, edge.target_id]))
+    const hop2 = edges.filter((edge) => hop1Nodes.has(edge.source_id) || hop1Nodes.has(edge.target_id))
+    const selected = Array.from(new Map([...hop1, ...hop2].map((edge) => [edge.id, edge])).values()).slice(0, 8)
+    return selected
+      .map((edge) => {
+        const source = nameById.get(edge.source_id) || '未知'
+        const target = nameById.get(edge.target_id) || '未知'
+        const type = edge.relation_type ? `（${edge.relation_type}）` : ''
+        return `${source}—${target}${type}：${edge.description || edge.boundary || ''}`
+      })
+      .join('\n')
+  }
+
   async function personaContext(agentVersion, query) {
     const attributes = agentVersion.attributes || {}
     const lines = []
@@ -40,6 +71,8 @@ export function createAgentRuntime({
     for (const rel of relations) {
       lines.push(`人物关系（${rel.person_name}）：${rel.context_doc.slice(0, 700)}`)
     }
+    const graph = graphContext(agentVersion, query)
+    if (graph) lines.push(`人物图谱：\n${graph}`)
     const docs = db.prepare('SELECT title, content FROM agent_knowledge_docs WHERE agent_id = ? ORDER BY created_at DESC').all(agentVersion.id)
     let knowledgeLines = null
     if (knowledge && query) {

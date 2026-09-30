@@ -25,6 +25,19 @@ function serializeKnowledge(row) {
   }
 }
 
+function parseGraphJson(text) {
+  const cleaned = String(text || '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+  if (!cleaned) return { persons: [], relations: [] }
+  const parsed = JSON.parse(cleaned)
+  return {
+    persons: Array.isArray(parsed?.persons) ? parsed.persons : [],
+    relations: Array.isArray(parsed?.relations) ? parsed.relations : [],
+  }
+}
+
 export function createAgentProfileService({ db, service, audit, complete, getCredential, getProvider, knowledge }) {
   async function generateRelationDoc({ agentVersion, personName, relation }) {
     if (!complete || !getCredential || !getProvider) throw new Error('model is not configured')
@@ -78,7 +91,128 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
     })
   }
 
+  async function extractGraph({ agentId }) {
+    if (!complete || !getCredential || !getProvider) return { nodes: [], edges: [] }
+    const agentVersion = service.getPublished(agentId)
+    if (!agentVersion) return { nodes: [], edges: [] }
+    const credentialRow = getCredential(agentVersion.model.credentialRef)
+    const providerRow = getProvider(agentVersion.model.providerId)
+    if (!credentialRow || !providerRow) return { nodes: [], edges: [] }
+    const attributes = agentVersion.attributes || {}
+    let docs = []
+    if (knowledge) {
+      try {
+        docs = await knowledge.retrieve({ agentId, query: '人物关系和经历', topK: 3 })
+      } catch {
+        docs = []
+      }
+    }
+    const material = [
+      `角色基本信息：${JSON.stringify(attributes)}`,
+      `背景故事：${(agentVersion.prompt || '').slice(0, 2000)}`,
+      `知识库资料：${docs.map((doc) => `${doc.title}：${doc.content.slice(0, 800)}`).join('\n')}`,
+    ].join('\n')
+    const result = await complete({
+      provider: { ...(providerRow || {}), modelName: agentVersion.model.name },
+      credentialRow,
+      messages: [
+        {
+          role: 'system',
+          content: '你负责从人物资料中抽取人物和人物关系，只输出 JSON，不输出其他内容。',
+        },
+        {
+          role: 'user',
+          content: `${material}\n\n请输出 JSON：{"persons":[{"name":"人物名","summary":"人物摘要","attributes":{}}],"relations":[{"source":"人物A","target":"人物B","type":"关系类型","description":"关系描述","boundary":"相处边界"}]}。要求：人物名必须来自资料原文；最多列出 10 个关键人物；关系 type 用简短词，如 丈夫、同事、朋友。`,
+        },
+      ],
+    })
+    const graph = parseGraphJson(result?.text)
+    const valid = new Set()
+    for (const person of graph.persons) {
+      if (typeof person?.name === 'string' && person.name && material.includes(person.name)) valid.add(person.name)
+    }
+    if (typeof attributes.name === 'string' && attributes.name) valid.add(attributes.name)
+    const now = Date.now()
+    const upsertNode = db.prepare(
+      `INSERT INTO character_nodes (id, agent_id, name, attributes_json, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(agent_id, name) DO UPDATE SET attributes_json = excluded.attributes_json, summary = excluded.summary, updated_at = excluded.updated_at`,
+    )
+    const nodeId = (name) => db.prepare('SELECT id FROM character_nodes WHERE agent_id = ? AND name = ?').get(agentId, name)?.id
+    db.transaction(() => {
+      for (const person of graph.persons) {
+        if (!valid.has(person?.name)) continue
+        upsertNode.run(
+          randomUUID(),
+          agentId,
+          person.name,
+          JSON.stringify(person.attributes && typeof person.attributes === 'object' ? person.attributes : {}),
+          typeof person.summary === 'string' ? person.summary : '',
+          now,
+          now,
+        )
+      }
+      if (attributes.name && !nodeId(attributes.name)) {
+        upsertNode.run(randomUUID(), agentId, attributes.name, JSON.stringify(attributes), '', now, now)
+      }
+      const upsertEdge = db.prepare(
+        `INSERT INTO character_edges (id, agent_id, source_id, target_id, relation_type, description, boundary, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(agent_id, source_id, target_id) DO UPDATE SET relation_type = excluded.relation_type, description = excluded.description, boundary = excluded.boundary, updated_at = excluded.updated_at`,
+      )
+      for (const edge of graph.relations) {
+        const source = edge?.source
+        const target = edge?.target
+        if (!valid.has(source) || !valid.has(target) || source === target) continue
+        const sourceId = nodeId(source)
+        const targetId = nodeId(target)
+        if (!sourceId || !targetId) continue
+        upsertEdge.run(
+          randomUUID(),
+          agentId,
+          sourceId,
+          targetId,
+          typeof edge.type === 'string' ? edge.type : '',
+          typeof edge.description === 'string' ? edge.description : '',
+          typeof edge.boundary === 'string' ? edge.boundary : '',
+          now,
+          now,
+        )
+      }
+    })()
+    return graphRows(agentId)
+  }
+
+  function graphRows(agentId) {
+    const nodes = db
+      .prepare('SELECT id, name, attributes_json, summary, updated_at FROM character_nodes WHERE agent_id = ? ORDER BY updated_at DESC')
+      .all(agentId)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        attributes: JSON.parse(row.attributes_json),
+        summary: row.summary,
+        updatedAt: row.updated_at,
+      }))
+    const nameById = new Map(nodes.map((node) => [node.id, node.name]))
+    const edges = db
+      .prepare('SELECT * FROM character_edges WHERE agent_id = ? ORDER BY updated_at DESC')
+      .all(agentId)
+      .map((row) => ({
+        id: row.id,
+        sourceName: nameById.get(row.source_id) || row.source_id,
+        targetName: nameById.get(row.target_id) || row.target_id,
+        relationType: row.relation_type,
+        description: row.description,
+        boundary: row.boundary,
+        updatedAt: row.updated_at,
+      }))
+    return { nodes, edges }
+  }
+
   return {
+    listGraph(agentId) {
+      return graphRows(agentId)
+    },
     listRelations(agentId) {
       return db.prepare('SELECT * FROM agent_relations WHERE agent_id = ? ORDER BY created_at DESC').all(agentId).map(serializeRelation)
     },
@@ -136,6 +270,7 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
       return serializeRelation(db.prepare('SELECT * FROM agent_relations WHERE id = ?').get(relationId))
     },
     async refreshAllRelations({ agentId, actorId }) {
+      await extractGraph({ agentId }).catch(() => null)
       const rows = db.prepare('SELECT id FROM agent_relations WHERE agent_id = ?').all(agentId)
       let updated = 0
       for (const row of rows) {
@@ -159,6 +294,7 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
       return updated
     },
     async refreshStaleRelations({ agentId }) {
+      await extractGraph({ agentId }).catch(() => null)
       const cutoff = Date.now() - RELATIONS_TTL_MS
       const rows = db.prepare('SELECT id FROM agent_relations WHERE agent_id = ? AND updated_at < ?').all(agentId, cutoff)
       let updated = 0
