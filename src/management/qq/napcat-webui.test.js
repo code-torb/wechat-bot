@@ -31,6 +31,7 @@ test('reads the mounted WebUI token and returns only QR and account status', asy
     loginError: '',
     qrcodeUrl: 'qq://scan/123',
     selfId: '12345678',
+    nickname: 'QQ User',
   })
   assert.equal(JSON.stringify(status).includes('webui-secret'), false)
   assert.equal(calls[0].url, 'http://napcat:6099/api/auth/login')
@@ -93,4 +94,27 @@ test('renews an expired WebUI credential once and does not expose the token on a
   })
   assert.equal((await webui.status()).isLogin, false)
   assert.equal(logins, 2)
+})
+
+test('reads and updates OneBot configuration through the WebUI credential', async () => {
+  const calls = []
+  const webui = createNapCatWebUi({
+    token: 'webui-token',
+    fetchFn: async (url, init) => {
+      calls.push({ url, init })
+      const path = new URL(url).pathname
+      const data = path.endsWith('/auth/login')
+        ? { Credential: 'session' }
+        : path.endsWith('/GetConfig')
+          ? { network: { websocketServers: [] } }
+          : null
+      return { ok: true, status: 200, json: async () => ({ code: 0, data }) }
+    },
+  })
+  const config = await webui.oneBotConfig()
+  await webui.setOneBotConfig(config)
+  assert.equal(calls[1].url, 'http://napcat:6099/api/OB11Config/GetConfig')
+  assert.equal(calls[2].url, 'http://napcat:6099/api/OB11Config/SetConfig')
+  assert.deepEqual(JSON.parse(JSON.parse(calls[2].init.body).config), config)
+  assert.equal(calls[2].init.headers.authorization, 'Bearer session')
 })

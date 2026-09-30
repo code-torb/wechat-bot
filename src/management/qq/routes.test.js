@@ -14,6 +14,7 @@ import { createAgentService } from '../agents/service.js'
 import { createQQRuleRepository } from './rules.js'
 import { createQQRouter } from './router.js'
 import { registerQQRoutes } from './routes.js'
+import { createGrantRepository } from '../permissions/grants.js'
 
 test('only an owner can see QR status and change the logged-in account agent', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'qq-login-routes-'))
@@ -51,15 +52,26 @@ test('only an owner can see QR status and change the logged-in account agent', a
     status: async () => ({ isLogin: true, isOffline: false, loginPhase: 'online', qrcodeUrl: '', selfId: '12345' }),
     refresh: async () => ({ qrcodeUrl: 'qq://scan' }),
   }
+  let websocketWrites = 0
   let identity = { selfId: '12345' }
   const app = await createApp({ db, sessions, logger: false })
   t.after(() => app.close())
   registerAuthRoutes(app, { db, sessions })
   registerQQRoutes(app, {
+    db,
     qqRules,
     qqRouter: createQQRouter({ db, service }),
     service,
+    grants: createGrantRepository(db),
+    audit: createAuditStore(db),
     napcatWebUi,
+    napcatConnection: {
+      status: async () => ({ ready: true, port: 3001, services: [], revision: 'b'.repeat(64) }),
+      ensureWebSocket: async () => {
+        websocketWrites++
+        return { ready: true, port: 3001, services: [] }
+      },
+    },
     getOneBotClient: () => ({ identity }),
     ensureBotAccount: (selfId) => {
       const existing = qqRules.accountBySelf('qq-onebot', selfId)
@@ -81,6 +93,31 @@ test('only an owner can see QR status and change the logged-in account agent', a
   assert.equal(status.statusCode, 200)
   assert.equal(status.json().data.accountId, 'bot-a')
   assert.equal(status.json().data.oneBotReady, true)
+  const forbiddenConnection = await app.inject({
+    method: 'POST',
+    url: '/api/v1/qq/connection/websocket',
+    cookies: { mgmt_session: viewerCookie },
+    headers: { 'x-csrf-token': viewer.json().data.csrf },
+    payload: { revision: 'b'.repeat(64) },
+  })
+  assert.equal(forbiddenConnection.statusCode, 403)
+  const missingCsrf = await app.inject({
+    method: 'POST',
+    url: '/api/v1/qq/connection/websocket',
+    cookies: { mgmt_session: ownerCookie },
+    payload: { revision: 'b'.repeat(64) },
+  })
+  assert.equal(missingCsrf.statusCode, 403)
+  assert.equal(websocketWrites, 0)
+  const configuredConnection = await app.inject({
+    method: 'POST',
+    url: '/api/v1/qq/connection/websocket',
+    cookies: { mgmt_session: ownerCookie },
+    headers: { 'x-csrf-token': owner.json().data.csrf },
+    payload: { revision: 'b'.repeat(64) },
+  })
+  assert.equal(configuredConnection.statusCode, 200)
+  assert.equal(websocketWrites, 1)
   identity = { selfId: '67890' }
   const switching = await app.inject({ method: 'GET', url: '/api/v1/qq/login', cookies: { mgmt_session: ownerCookie } })
   assert.equal(switching.json().data.selfId, '12345')
@@ -120,4 +157,46 @@ test('only an owner can see QR status and change the logged-in account agent', a
   })
   assert.equal(preview.json().data.accepted, true)
   assert.equal(preview.json().data.agentId, agent.id)
+  const setup = await app.inject({ method: 'GET', url: '/api/v1/qq/accounts/bot-a/setup', cookies: { mgmt_session: ownerCookie } })
+  assert.equal(setup.statusCode, 200)
+  const body = {
+    revision: setup.json().data.revision,
+    defaultAgentId: agent.id,
+    rules: setup.json().data.rules.map(({ id, ...rule }) => rule),
+    bindings: [],
+    grants: [{ scene: 'private', peerId: '9876', senderId: '9876', capability: 'search.web', resourceId: '' }],
+  }
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/api/v1/qq/accounts/bot-a/setup',
+    cookies: { mgmt_session: ownerCookie },
+    headers: { 'x-csrf-token': owner.json().data.csrf },
+    payload: body,
+  })
+  assert.equal(saved.statusCode, 200)
+  assert.equal(saved.json().data.grants[0].capability, 'search.web')
+  const stale = await app.inject({
+    method: 'PUT',
+    url: '/api/v1/qq/accounts/bot-a/setup',
+    cookies: { mgmt_session: ownerCookie },
+    headers: { 'x-csrf-token': owner.json().data.csrf },
+    payload: { ...body, rules: [] },
+  })
+  assert.equal(stale.statusCode, 409)
+  assert.equal(qqRules.rules('bot-a').length, 1)
+  const invalid = await app.inject({
+    method: 'PUT',
+    url: '/api/v1/qq/accounts/bot-a/setup',
+    cookies: { mgmt_session: ownerCookie },
+    headers: { 'x-csrf-token': owner.json().data.csrf },
+    payload: {
+      ...body,
+      revision: saved.json().data.revision,
+      rules: [],
+      grants: [{ scene: 'private', peerId: '9876', senderId: '2222', capability: 'search.web' }],
+    },
+  })
+  assert.equal(invalid.statusCode, 422)
+  assert.equal(qqRules.rules('bot-a').length, 1)
+  assert.equal(createGrantRepository(db).list({ botAccountId: 'bot-a' }).length, 1)
 })

@@ -9,6 +9,7 @@ import { createStyleRepository } from './styles/repository.js'
 import { createQQRuleRepository } from './qq/rules.js'
 import { createQQRouter } from './qq/router.js'
 import { createNapCatWebUi } from './qq/napcat-webui.js'
+import { createNapCatConnection } from './qq/napcat-connection.js'
 import { createConversationStore } from './conversations/repository.js'
 import { createGrantRepository } from './permissions/grants.js'
 import { registerManagementRoutes } from './routes.js'
@@ -47,6 +48,11 @@ const napcatWebUi = createNapCatWebUi({
   tokenFile: process.env.NAPCAT_WEBUI_TOKEN_FILE || '',
   token: process.env.NAPCAT_WEBUI_SECRET_KEY || '',
 })
+const napcatConnection = createNapCatConnection({
+  webui: napcatWebUi,
+  accessToken: process.env.ONEBOT_ACCESS_TOKEN || '',
+  wsUrl: process.env.ONEBOT_WS_URL || 'ws://napcat:3001',
+})
 function ensureBotAccount(selfId) {
   if (!/^\d+$/.test(selfId)) return null
   const existing = qqRules.accountBySelf('qq-onebot', selfId)
@@ -84,6 +90,7 @@ registerManagementRoutes(app, {
   qqRules,
   qqRouter,
   napcatWebUi,
+  napcatConnection,
   ensureBotAccount,
   getOneBotClient: () => consumer?.client,
   conversations,

@@ -79,27 +79,29 @@ export function createNapCatWebUi({ baseUrl = 'http://napcat:6099', tokenFile = 
     authenticatedToken = secret
   }
 
-  async function call(path) {
+  async function call(path, body = {}) {
     const currentToken = getToken()
     if (!credential || now() >= credentialUntil || currentToken !== authenticatedToken) await authenticate()
     try {
-      return await post(`QQLogin/${path}`, {}, credential)
+      return await post(path, body, credential)
     } catch (error) {
       if (error.code !== 'NAPCAT_WEBUI_UNAUTHORIZED') throw error
       credential = ''
       await authenticate()
-      return post(`QQLogin/${path}`, {}, credential)
+      return post(path, body, credential)
     }
   }
 
   return {
     verify: (totpCode) => authenticate(totpCode),
     async status() {
-      const data = await call('CheckLoginStatus')
+      const data = await call('QQLogin/CheckLoginStatus')
       let selfId = ''
+      let nickname = ''
       if (data?.isLogin) {
-        const info = await call('GetQQLoginInfo')
+        const info = await call('QQLogin/GetQQLoginInfo')
         selfId = String(info?.uin || info?.selfId || '')
+        nickname = typeof info?.nickname === 'string' ? info.nickname.slice(0, 80) : ''
       }
       return {
         isLogin: Boolean(data?.isLogin),
@@ -108,14 +110,17 @@ export function createNapCatWebUi({ baseUrl = 'http://napcat:6099', tokenFile = 
         loginError: typeof data?.loginError === 'string' ? data.loginError : '',
         qrcodeUrl: typeof data?.qrcodeurl === 'string' && data.qrcodeurl.length <= 4096 ? data.qrcodeurl : '',
         selfId: /^\d+$/.test(selfId) ? selfId : '',
+        nickname,
       }
     },
     async refresh() {
-      const data = await call('RefreshQRcode')
+      const data = await call('QQLogin/RefreshQRcode')
       return {
         qrcodeUrl: typeof data?.qrcodeurl === 'string' && data.qrcodeurl.length <= 4096 ? data.qrcodeurl : '',
         restarting: Boolean(data?.restarting),
       }
     },
+    oneBotConfig: () => call('OB11Config/GetConfig'),
+    setOneBotConfig: (config) => call('OB11Config/SetConfig', { config: JSON.stringify(config) }),
   }
 }

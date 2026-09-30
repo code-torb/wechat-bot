@@ -1,21 +1,48 @@
-import { requireCapability } from '../auth/authorization.js'
+import { createQQSetup, serializeRule } from './setup.js'
 
 const scopeTypeSchema = { type: 'string', enum: ['group', 'private', 'group_user'] }
-
-function serializeRule(row) {
-  return {
-    id: row.id,
-    scopeType: row.scope_type,
-    scopeKey: row.scope_key,
-    allow: Boolean(row.allow),
-    trigger: JSON.parse(row.trigger_json),
-    maxLevel: row.max_level,
-    pacingOverride: row.pacing_override_json ? JSON.parse(row.pacing_override_json) : null,
-    quoteReply: Boolean(row.quote_reply),
-  }
+const agentBindingSchema = {
+  type: 'object',
+  required: ['scopeType', 'scopeKey', 'agentId'],
+  additionalProperties: false,
+  properties: { scopeType: scopeTypeSchema, scopeKey: { type: 'string' }, agentId: { type: 'string' } },
+}
+const accessRuleSchema = {
+  type: 'object',
+  required: ['scopeType', 'scopeKey', 'allow', 'maxLevel'],
+  additionalProperties: false,
+  properties: {
+    scopeType: scopeTypeSchema,
+    scopeKey: { type: 'string' },
+    allow: { type: 'boolean' },
+    trigger: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        mode: { type: 'string', enum: ['any', 'all'] },
+        mention: { type: 'boolean' },
+        prefix: { type: ['string', 'null'] },
+        phrase: { type: ['string', 'null'] },
+      },
+    },
+    maxLevel: { type: 'integer', minimum: 0, maximum: 3 },
+    pacingOverride: {
+      type: ['object', 'null'],
+      properties: {
+        baseDelayMs: { type: 'integer', minimum: 0, maximum: 60000 },
+        charsPerSecond: { type: 'integer', minimum: 0, maximum: 200 },
+        maxDelayMs: { type: 'integer', minimum: 0, maximum: 60000 },
+      },
+    },
+    quoteReply: { type: 'boolean' },
+  },
 }
 
-export function registerQQRoutes(app, { qqRules, qqRouter, service, napcatWebUi, getOneBotClient, ensureBotAccount }) {
+export function registerQQRoutes(
+  app,
+  { db, grants, audit, qqRules, qqRouter, service, napcatWebUi, napcatConnection, getOneBotClient, ensureBotAccount },
+) {
+  const setup = createQQSetup({ db, qqRules, grants, service })
   app.register(async (scope) => {
     scope.addHook('preHandler', async (request, reply) => {
       const user = request.auth?.user
@@ -80,6 +107,69 @@ export function registerQQRoutes(app, { qqRules, qqRouter, service, napcatWebUi,
       async (request) => {
         await napcatWebUi.verify(request.body.totpCode)
         return { data: { verified: true } }
+      },
+    )
+
+    scope.get('/api/v1/qq/connection', async () => ({ data: await napcatConnection.status() }))
+    scope.post(
+      '/api/v1/qq/connection/websocket',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            required: ['revision'],
+            additionalProperties: false,
+            properties: { revision: { type: 'string', pattern: '^[a-f0-9]{64}$' } },
+          },
+        },
+      },
+      async (request) => ({ data: await napcatConnection.ensureWebSocket(request.body.revision) }),
+    )
+
+    scope.get('/api/v1/qq/accounts/:id/setup', async (request) => ({ data: setup.read(request.params.id) }))
+    scope.put(
+      '/api/v1/qq/accounts/:id/setup',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            required: ['revision', 'defaultAgentId', 'rules', 'bindings', 'grants'],
+            additionalProperties: false,
+            properties: {
+              revision: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+              defaultAgentId: { type: 'string', minLength: 1 },
+              rules: { type: 'array', maxItems: 200, items: accessRuleSchema },
+              bindings: { type: 'array', maxItems: 200, items: agentBindingSchema },
+              grants: {
+                type: 'array',
+                maxItems: 500,
+                items: {
+                  type: 'object',
+                  required: ['scene', 'peerId', 'senderId', 'capability'],
+                  additionalProperties: false,
+                  properties: {
+                    scene: { type: 'string', enum: ['group', 'private'] },
+                    peerId: { type: 'string' },
+                    senderId: { type: 'string' },
+                    capability: { type: 'string' },
+                    resourceId: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      async (request) => {
+        const result = setup.save({ accountId: request.params.id, ...request.body })
+        audit?.record({
+          actorType: 'admin',
+          actorId: request.auth.user.userId,
+          action: 'qq.setup.update',
+          resourceType: 'bot_accounts',
+          resourceId: request.params.id,
+        })
+        return { data: result }
       },
     )
 

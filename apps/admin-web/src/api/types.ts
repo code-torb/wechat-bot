@@ -76,8 +76,35 @@ export type QQLoginStatus = {
   loginError: string
   qrcodeUrl: string
   selfId: string
+  nickname: string
   accountId: string | null
   oneBotReady: boolean
+}
+
+export type QQConnection = {
+  revision: string
+  port: number
+  tokenConfigured: boolean
+  ready: boolean
+  services: { name: string; host: string; port: number; enabled: boolean; format: 'array' | 'string'; matchesManagement: boolean }[]
+}
+
+export type QQBinding = { scopeType: 'group' | 'private' | 'group_user'; scopeKey: string; agentId: string }
+export type QQGrant = {
+  scene: 'group' | 'private'
+  peerId: string
+  senderId: string
+  capability: string
+  resourceId: string
+}
+export type QQSetup = {
+  accountId: string
+  selfId: string
+  defaultAgentId: string | null
+  rules: AccessRule[]
+  bindings: QQBinding[]
+  grants: QQGrant[]
+  revision: string
 }
 
 export type CommandDefinition = {
