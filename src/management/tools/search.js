@@ -1,6 +1,15 @@
-export function createSearchTool({ secretStore, fetchFn = fetch, timeoutMs = 8000 }) {
-  return async function searchWeb({ query, limit = 5, credentialRef, providerId, signal }) {
-    const apiKey = secretStore.withSecret({ id: credentialRef, provider_id: providerId, purpose: 'search', key_version: 1 }, (value) => value)
+export function createSearchTool({ db, secretStore, fetchFn = fetch, timeoutMs = 8000 }) {
+  return async function searchWeb({ query, limit = 5, signal }) {
+    const model = db.prepare('SELECT * FROM models WHERE search_key_cipher IS NOT NULL AND enabled = 1 ORDER BY updated_at DESC LIMIT 1').get()
+    if (!model) throw new Error('search model is not configured')
+    const record = {
+      ...model,
+      cipher: model.search_key_cipher,
+      nonce: model.search_key_nonce,
+      tag: model.search_key_tag,
+      key_version: model.search_key_version,
+    }
+    const apiKey = secretStore.withSecret(record, (value) => value)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     const onSignal = () => controller.abort()

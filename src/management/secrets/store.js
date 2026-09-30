@@ -20,7 +20,16 @@ export class SecretStore {
   }
 
   decrypt(record) {
-    return unseal({ envelope: record, aad: credentialAad(record), key: this.key })
+    const useSearchFields =
+      record.search_key_version !== undefined && record.cipher !== undefined && record.nonce !== undefined && record.tag !== undefined
+    const envelope = useSearchFields
+      ? { cipher: record.cipher, nonce: record.nonce, tag: record.tag }
+      : {
+          cipher: record.api_key_cipher ?? record.cipher,
+          nonce: record.api_key_nonce ?? record.nonce,
+          tag: record.api_key_tag ?? record.tag,
+        }
+    return unseal({ envelope, aad: credentialAad(record), key: this.key })
   }
 
   withSecret(record, callback) {

@@ -64,40 +64,29 @@ function parseCharacterCardJson(text) {
   }
 }
 
-export function createAgentProfileService({ db, service, audit, complete, getCredential, getProvider, knowledge }) {
+export function createAgentProfileService({ db, service, audit, complete, getModel, knowledge }) {
   function defaultModelConfig() {
-    const credential = db
-      .prepare(
-        `SELECT c.* FROM credentials c JOIN providers p ON p.id = c.provider_id
-         WHERE c.purpose = 'model' AND c.enabled = 1 AND p.enabled = 1 ORDER BY c.updated_at DESC LIMIT 1`,
-      )
-      .get()
-    if (!credential) return null
-    const provider = db.prepare('SELECT * FROM providers WHERE id = ?').get(credential.provider_id)
+    const row = db.prepare('SELECT * FROM models WHERE enabled = 1 ORDER BY updated_at DESC LIMIT 1').get()
+    if (!row) return null
     const agent = db
       .prepare("SELECT draft_json FROM agents WHERE json_extract(draft_json, '$.model.name') != '' ORDER BY updated_at DESC LIMIT 1")
       .get()
     const modelName = agent ? JSON.parse(agent.draft_json).model.name : ''
     if (!modelName) return null
-    return { credentialRow: credential, providerRow: provider, modelName }
+    return { modelRow: row, modelName }
   }
 
   async function storyComplete(messages) {
     if (!complete) throw new Error('model is not configured')
     const config = defaultModelConfig()
     if (!config) throw new Error('model is not configured')
-    return complete({
-      provider: { ...config.providerRow, modelName: config.modelName },
-      credentialRow: config.credentialRow,
-      messages,
-    })
+    return complete({ model: config.modelRow, modelName: config.modelName, messages })
   }
 
   async function generateRelationDoc({ agentVersion, personName, relation }) {
-    if (!complete || !getCredential || !getProvider) throw new Error('model is not configured')
-    const credentialRow = getCredential(agentVersion.model.credentialRef)
-    const providerRow = getProvider(agentVersion.model.providerId)
-    if (!credentialRow || !providerRow) throw new Error('model credential or provider is unavailable')
+    if (!complete || !getModel) throw new Error('model is not configured')
+    const modelRow = getModel(agentVersion.model.modelId)
+    if (!modelRow) throw new Error('model is unavailable')
     const attributes = agentVersion.attributes || {}
     let docs = []
     if (knowledge) {
@@ -118,8 +107,8 @@ export function createAgentProfileService({ db, service, audit, complete, getCre
       `现有关系简介：${relation || '无'}`,
     ].join('\n')
     const result = await complete({
-      provider: { ...(providerRow || {}), modelName: agentVersion.model.name },
-      credentialRow,
+      model: modelRow,
+      modelName: agentVersion.model.name,
       messages: [
         { role: 'system', content: '你负责根据角色资料生成人物关系上下文文档，只输出正文，不输出标题和说明。' },
         {

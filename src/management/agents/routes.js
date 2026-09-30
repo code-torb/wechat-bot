@@ -35,8 +35,7 @@ const agentMutationSchema = {
       model: {
         type: 'object',
         properties: {
-          providerId: { type: 'string' },
-          credentialRef: { type: 'string' },
+          modelId: { type: 'string' },
           name: { type: 'string' },
           supportsTools: { type: 'boolean' },
         },

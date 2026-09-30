@@ -13,8 +13,7 @@ export function createAgentRuntime({
   scheduler,
   complete,
   tools,
-  getCredential,
-  getProvider,
+  getModel,
   sessionQueue,
   refreshStaleRelations,
   refreshAllRelations,
@@ -153,11 +152,10 @@ export function createAgentRuntime({
     const text = message.text
     const command = commandRegistry.match(agentVersion, text)
     const completeForAgent = (messages) => {
-      const credentialRow = getCredential ? getCredential(agentVersion.model.credentialRef) : null
-      const providerRow = getProvider ? getProvider(agentVersion.model.providerId) : null
+      const modelRow = getModel ? getModel(agentVersion.model.modelId) : null
       return complete({
-        provider: { ...(providerRow || { id: agentVersion.model.providerId, base_url: '' }), modelName: agentVersion.model.name },
-        credentialRow,
+        model: modelRow,
+        modelName: agentVersion.model.name,
         messages,
       })
     }

@@ -24,5 +24,6 @@ export function unseal({ envelope, aad, key }) {
 }
 
 export function credentialAad(record) {
+  if (record.aad_kind === 'model') return `${record.id}:model:${record.key_version}`
   return `${record.id}:${record.provider_id}:${record.purpose}:${record.key_version}`
 }

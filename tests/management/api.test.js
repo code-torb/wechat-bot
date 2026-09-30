@@ -39,17 +39,13 @@ async function build(t) {
     now,
     now,
   )
-  db.prepare(
-    'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)',
-  ).run('provider-a', 'test', 'https://model.example.test/v1', '{}', now, now)
   const secretStore = new SecretStore({ key: Buffer.alloc(32, 3) })
-  const envelope = secretStore.encrypt({
-    record: { id: 'cred-a', provider_id: 'provider-a', purpose: 'model', key_version: 1 },
-    plaintext: 'fixture-key',
-  })
+  const envelope = secretStore.encrypt({ record: { id: 'model-a', aad_kind: 'model', key_version: 1 }, plaintext: 'fixture-key' })
   db.prepare(
-    'INSERT INTO credentials (id, provider_id, purpose, cipher, nonce, tag, key_version, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-  ).run('cred-a', 'provider-a', 'model', envelope.cipher, envelope.nonce, envelope.tag, 1, now, now)
+    `INSERT INTO models (id, name, base_url, aad_kind, api_key_cipher, api_key_nonce, api_key_tag, key_version,
+       search_key_cipher, search_key_nonce, search_key_tag, search_key_version, embedding_model, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, 'model', ?, ?, ?, 1, NULL, NULL, NULL, NULL, '', 1, ?, ?)`,
+  ).run('model-a', 'test-provider', 'https://model.example.test/v1', envelope.cipher, envelope.nonce, envelope.tag, now, now)
   const sessions = new SessionStore({ db })
   const audit = createAuditStore(db)
   const service = createAgentService({ db, audit })
@@ -63,8 +59,7 @@ async function build(t) {
     service,
     audit,
     complete: async ({ messages }) => ({ text: `生成的关系文档：${String(messages.at(-1).content).slice(0, 50)}`, toolCalls: [] }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   const app = await createApp({ db, sessions, logger: false })
   registerManagementRoutes(app, {
@@ -105,7 +100,7 @@ test('full agent API flow: create, publish, rollback and audit', async (t) => {
   const draft = {
     name: '助手',
     prompt: '你是一个测试助手。',
-    model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+    model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
   }
   const patched = await app.inject({
     method: 'PATCH',
@@ -218,7 +213,7 @@ test('new agents accept prompt and model edits separately before publish', async
     url: `/api/v1/agents/${id}`,
     cookies: { [SESSION_COOKIE]: cookie },
     headers: { ...headers, 'if-match': '2' },
-    payload: { model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false } },
+    payload: { model: { modelId: 'model-a', name: 'test-model', supportsTools: false } },
   })
   assert.equal(model.statusCode, 200, model.body)
   assert.equal(model.json().data.draft.name, '助手')
@@ -255,7 +250,7 @@ test('one Agent publish request saves the role and selected styles together', as
       expectedRevision: 1,
       draft: {
         prompt: '林安宁曾是一名编辑，如今在上海照顾儿子。',
-        model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+        model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
         styleValues: [],
       },
     },
@@ -304,7 +299,7 @@ test('profile APIs manage relations, knowledge and story creation', async (t) =>
       draft: {
         prompt: '她曾是编辑，如今在家照顾儿子。',
         attributes: { name: '沈宁', birthDate: '1992-01-01', gender: '女', occupation: '设计师', hobbies: '跑步' },
-        model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+        model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
       },
     },
   })
@@ -434,7 +429,7 @@ test('style definition and agent pacing routes update drafts and publish snapsho
   const draft = {
     name: '助手',
     prompt: '你是一个测试助手。',
-    model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+    model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
   }
   await app.inject({
     method: 'PATCH',

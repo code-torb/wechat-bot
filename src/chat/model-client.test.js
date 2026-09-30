@@ -5,13 +5,13 @@ import { createModelClient } from './model-client.js'
 
 test('management model client returns replies with provider usage', async () => {
   const secretStore = new SecretStore({ key: Buffer.alloc(32, 7) })
-  const record = { id: 'credential-a', provider_id: 'provider-a', purpose: 'model', key_version: 1 }
+  const record = { id: 'model-a', aad_kind: 'model', key_version: 1 }
   const credentialRow = { ...record, ...secretStore.encrypt({ record, plaintext: 'test-key' }) }
   let requestBody
   const complete = createModelClient({ secretStore })
   const result = await complete({
-    provider: { base_url: 'https://example.test/v1', modelName: 'deepseek-chat' },
-    credentialRow,
+    model: { ...credentialRow, base_url: 'https://example.test/v1' },
+    modelName: 'deepseek-chat',
     messages: [{ role: 'user', content: '你好' }],
     transport: async (_url, options) => {
       requestBody = JSON.parse(options.body)

@@ -6,6 +6,7 @@ import { SecretStore } from './secrets/store.js'
 import { createAgentService } from './agents/service.js'
 import { upgradeUntouchedDefaultRole } from './agents/default-role.js'
 import { createAgentProfileService } from './agents/profile-service.js'
+import { migrateLegacyModels } from './models/migrate-legacy.js'
 import { createEmbeddingClient } from './knowledge/embedding-client.js'
 import { createKnowledgeIndexer } from './knowledge/indexer.js'
 import { createAuditStore } from './audit/store.js'
@@ -72,18 +73,18 @@ const grants = createGrantRepository(db)
 const policyEngine = createPolicyEngine({ db })
 const commandRegistry = createCommandRegistry({ db })
 const memes = createMemeService({ db, storageDir: process.env.MANAGEMENT_MEME_DIR || 'data/memes' })
-const searchWeb = secretStore ? createSearchTool({ secretStore, fetchFn: globalThis.fetch }) : null
+const searchWeb = secretStore ? createSearchTool({ db, secretStore, fetchFn: globalThis.fetch }) : null
 const fileClient =
   process.env.FILE_EXECUTOR_SOCKET && process.env.FILE_EXECUTOR_SECRET
     ? createFileClient({ socketPath: process.env.FILE_EXECUTOR_SOCKET, secret: process.env.FILE_EXECUTOR_SECRET })
     : null
 const tools = createToolRegistry({ db, policyEngine, searchWeb, memes })
-const getCredential = (credentialRef) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(credentialRef)
-const getProvider = (providerId) => db.prepare('SELECT * FROM providers WHERE id = ?').get(providerId)
+const getModel = (modelId) => db.prepare('SELECT * FROM models WHERE id = ?').get(modelId)
 const modelClient = secretStore ? createModelClient({ secretStore }) : null
 const embedding = createEmbeddingClient({ db, secretStore })
 const knowledge = embedding ? createKnowledgeIndexer({ db, embedding }) : null
-const profileService = createAgentProfileService({ db, service, audit, complete: modelClient, getCredential, getProvider, knowledge })
+if (secretStore) migrateLegacyModels({ db, secretStore })
+const profileService = createAgentProfileService({ db, service, audit, complete: modelClient, getModel, knowledge })
 const app = await createApp({ db, sessions })
 let scheduler = null
 let consumer = null
@@ -133,8 +134,7 @@ if (process.env.ONEBOT_ACCESS_TOKEN && modelClient && secretStore) {
     scheduler,
     complete: modelClient,
     tools,
-    getCredential,
-    getProvider,
+    getModel,
     refreshStaleRelations: ({ agentId }) => profileService.refreshStaleRelations({ agentId }),
     refreshAllRelations: ({ agentId }) => profileService.refreshAllRelations({ agentId }),
     knowledge,

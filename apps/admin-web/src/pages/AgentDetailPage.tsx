@@ -3,7 +3,7 @@ import { Button, Card, Descriptions, Input, InputNumber, Select, Space, Spin, Ta
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Agent, AgentRelation, CommandDefinition, Conversation, KnowledgeDoc, StyleDefinition } from '../api/types'
+import type { Agent, AgentRelation, CommandDefinition, Conversation, KnowledgeDoc, Model, StyleDefinition } from '../api/types'
 import { styleGuidance } from './styleGuidance'
 
 export default function AgentDetailPage() {
@@ -20,6 +20,10 @@ export default function AgentDetailPage() {
   const { data: commands } = useQuery({
     queryKey: ['commands'],
     queryFn: () => api<CommandDefinition[]>('/api/v1/commands').then((result) => result.data),
+  })
+  const { data: models } = useQuery({
+    queryKey: ['models'],
+    queryFn: () => api<Model[]>('/api/v1/models').then((result) => result.data),
   })
   const { data: conversations } = useQuery({
     queryKey: ['conversations', id],
@@ -105,7 +109,7 @@ export default function AgentDetailPage() {
 
   const eligibleStyles = (styles || []).filter((style) => style.ownerAgentId === null || style.ownerAgentId === agent.id)
   const availableStyles = eligibleStyles.filter((style) => style.enabled && !draft.styleValues.some((item) => item.definitionId === style.id))
-  const canPublish = Boolean(draft.prompt.trim() && draft.model.providerId.trim() && draft.model.credentialRef.trim() && draft.model.name.trim())
+  const canPublish = Boolean(draft.prompt.trim() && draft.model.modelId.trim() && draft.model.name.trim())
   const updateModel = (model: Partial<Agent['draft']['model']>) => setDraft({ ...draft, model: { ...draft.model, ...model } })
   const updateAttributes = (attributes: Partial<Agent['draft']['attributes']>) =>
     setDraft({ ...draft, attributes: { ...(draft.attributes || {}), ...attributes } })
@@ -487,12 +491,13 @@ export default function AgentDetailPage() {
                 </div>
                 <div className='agent-model-grid'>
                   <label>
-                    Provider ID
-                    <Input value={draft.model.providerId} onChange={(event) => updateModel({ providerId: event.target.value })} />
-                  </label>
-                  <label>
-                    凭据引用（不显示明文）
-                    <Input value={draft.model.credentialRef} onChange={(event) => updateModel({ credentialRef: event.target.value })} />
+                    模型
+                    <Select
+                      value={draft.model.modelId || undefined}
+                      placeholder='选择模型'
+                      options={(models || []).filter((model) => model.enabled).map((model) => ({ value: model.id, label: model.name }))}
+                      onChange={(value) => updateModel({ modelId: value })}
+                    />
                   </label>
                   <label>
                     模型名

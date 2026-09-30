@@ -5,6 +5,20 @@ import { createSearchTool } from './search.js'
 test('search returns up to five results and preserves the query', async () => {
   const seen = []
   const search = createSearchTool({
+    db: {
+      prepare: () => ({
+        get: () => ({
+          id: 'model-s',
+          base_url: 'https://example.test/v1',
+          search_key_cipher: 'cipher',
+          search_key_nonce: 'nonce',
+          search_key_tag: 'tag',
+          search_key_version: 1,
+          aad_kind: 'model',
+          enabled: 1,
+        }),
+      }),
+    },
     secretStore: { withSecret: (_record, callback) => callback('fixture-key') },
     fetchFn: async (url, options) => {
       seen.push({ url, auth: options.headers['X-Subscription-Token'] })
@@ -16,7 +30,7 @@ test('search returns up to five results and preserves the query', async () => {
       }
     },
   })
-  const result = await search({ query: '天气', limit: 5, credentialRef: 'cred', providerId: 'provider' })
+  const result = await search({ query: '天气', limit: 5 })
   assert.equal(result.results.length, 5)
   assert.equal(seen[0].auth, 'fixture-key')
   assert.match(seen[0].url, /q=%E5%A4%A9%E6%B0%94/)
@@ -25,10 +39,24 @@ test('search returns up to five results and preserves the query', async () => {
 
 test('search failure is surfaced without leaking the credential', async () => {
   const search = createSearchTool({
+    db: {
+      prepare: () => ({
+        get: () => ({
+          id: 'model-s',
+          base_url: 'https://example.test/v1',
+          search_key_cipher: 'cipher',
+          search_key_nonce: 'nonce',
+          search_key_tag: 'tag',
+          search_key_version: 1,
+          aad_kind: 'model',
+          enabled: 1,
+        }),
+      }),
+    },
     secretStore: { withSecret: (_record, callback) => callback('fixture-secret-value') },
     fetchFn: async () => ({ ok: false, status: 401 }),
   })
-  await assert.rejects(() => search({ query: 'x', credentialRef: 'cred', providerId: 'provider' }), /401/)
+  await assert.rejects(() => search({ query: 'x' }), /401/)
 })
 
 test('network policy blocks metadata, loopback and private hosts', async () => {

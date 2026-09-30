@@ -15,17 +15,13 @@ function fixture(t) {
   const db = openDatabase({ filename: join(dir, 'test.sqlite') })
   t.after(() => db.close())
   const now = Date.now()
-  db.prepare(
-    'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)',
-  ).run('provider-a', 'test', 'https://model.example.test/v1', '{}', now, now)
   const secretStore = new SecretStore({ key: Buffer.alloc(32, 4) })
-  const envelope = secretStore.encrypt({
-    record: { id: 'cred-a', provider_id: 'provider-a', purpose: 'model', key_version: 1 },
-    plaintext: 'fixture-key',
-  })
+  const envelope = secretStore.encrypt({ record: { id: 'model-a', aad_kind: 'model', key_version: 1 }, plaintext: 'fixture-key' })
   db.prepare(
-    'INSERT INTO credentials (id, provider_id, purpose, cipher, nonce, tag, key_version, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-  ).run('cred-a', 'provider-a', 'model', envelope.cipher, envelope.nonce, envelope.tag, 1, now, now)
+    `INSERT INTO models (id, name, base_url, aad_kind, api_key_cipher, api_key_nonce, api_key_tag, key_version,
+       search_key_cipher, search_key_nonce, search_key_tag, search_key_version, embedding_model, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, 'model', ?, ?, ?, 1, NULL, NULL, NULL, NULL, '', 1, ?, ?)`,
+  ).run('model-a', 'test-provider', 'https://model.example.test/v1', envelope.cipher, envelope.nonce, envelope.tag, now, now)
   const audit = createAuditStore(db)
   const service = createAgentService({ db, audit })
   const profileService = createAgentProfileService({
@@ -33,8 +29,7 @@ function fixture(t) {
     service,
     audit,
     complete: async ({ messages }) => ({ text: `生成：${String(messages.at(-1).content).slice(0, 40)}`, toolCalls: [] }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   return { db, service, profileService }
 }
@@ -47,7 +42,7 @@ function publishedAgent(t, { db, service }) {
       name: '林安宁',
       prompt: '她曾做过图书编辑，如今在家照顾儿子。',
       attributes: { name: '林安宁', birthDate: '1988-05-06', gender: '女', occupation: '编辑', hobbies: '读书' },
-      model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+      model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
     },
     expectedRevision: 1,
     actorId: 'owner-1',
@@ -62,7 +57,7 @@ test('relations upsert, refresh and delete round trip', async (t) => {
   const created = profileService.upsertRelation({ agentId, personName: '周叙', relation: '丈夫，习惯独自决定家里大事', actorId: 'owner-1' })
   assert.equal(created.personName, '周叙')
   assert.equal(created.contextDoc, '')
-  db.prepare('UPDATE agent_relations SET updated_at = ? WHERE id = ?').run(created.updatedAt - 1, created.id)
+  db.prepare('UPDATE agent_relations SET updated_at = ? WHERE id = ?').run(created.updatedAt - 1000, created.id)
   const refreshed = await profileService.refreshRelation({ agentId, relationId: created.id })
   assert.match(refreshed.contextDoc, /^生成：/)
   assert.ok(refreshed.updatedAt > created.updatedAt)
@@ -133,8 +128,7 @@ test('upload indexes chunks and relation refresh uses retrieved knowledge', asyn
     service,
     audit: createAuditStore(db),
     complete: async ({ messages }) => ({ text: `生成：${String(messages.at(-1).content).slice(0, 300)}`, toolCalls: [] }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
     knowledge,
   })
   const doc = await profileService.addKnowledgeDoc({ agentId, title: '往事', content: '她在出版社工作。', actorId: 'owner-1' })
@@ -174,8 +168,7 @@ test('refreshAllRelations extracts a validated character graph first', async (t)
       }
       return { text: '关系文档', toolCalls: [] }
     },
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   profileService.upsertRelation({ agentId, personName: '儿子', relation: '', actorId: 'owner-1' })
   const updated = await profileService.refreshAllRelations({ agentId, actorId: 'owner-1' })
@@ -228,8 +221,7 @@ test('analyzeStory returns model-recognized characters and falls back to rules',
       }),
       toolCalls: [],
     }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   const story = '我叫林安宁，婚后生活围绕儿子和家庭。周叙是她的丈夫。'
   const result = await profileService.analyzeStory({
@@ -274,8 +266,7 @@ test('createFromStory distills the chosen character, stores the story and builds
         toolCalls: [],
       }
     },
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   const story = '我叫林安宁，婚后生活围绕儿子和家庭。周叙是她的丈夫，两人后来分开。'
   const agent = await profileService.createFromStory({

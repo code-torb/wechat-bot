@@ -29,7 +29,7 @@ function renderAgent({ name = '助手', description = '' } = {}) {
           description,
           prompt: '林安宁住在上海。',
           attributes: { name: '林安宁', birthDate: '', gender: '女', occupation: '编辑', hobbies: '读书' },
-          model: { providerId: 'provider-a', credentialRef: 'credential-a', name: 'test-model', supportsTools: false },
+          model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
           styleValues: [],
           pacing: null,
           capabilities: [],

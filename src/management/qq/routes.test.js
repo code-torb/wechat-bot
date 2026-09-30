@@ -37,14 +37,13 @@ test('only an owner can see QR status and change the logged-in account agent', a
     now,
     now,
   )
-  db.prepare(
-    'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)',
-  ).run('provider-a', 'model', 'https://example.test/v1', '{}', now, now)
   const secretStore = new SecretStore({ key: Buffer.alloc(32, 2) })
-  const encrypted = secretStore.encrypt({ record: { id: 'cred-a', provider_id: 'provider-a', purpose: 'model', key_version: 1 }, plaintext: 'key' })
+  const encrypted = secretStore.encrypt({ record: { id: 'model-a', aad_kind: 'model', key_version: 1 }, plaintext: 'key' })
   db.prepare(
-    'INSERT INTO credentials (id, provider_id, purpose, cipher, nonce, tag, key_version, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-  ).run('cred-a', 'provider-a', 'model', encrypted.cipher, encrypted.nonce, encrypted.tag, 1, now, now)
+    `INSERT INTO models (id, name, base_url, aad_kind, api_key_cipher, api_key_nonce, api_key_tag, key_version,
+       search_key_cipher, search_key_nonce, search_key_tag, search_key_version, embedding_model, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, 'model', ?, ?, ?, 1, NULL, NULL, NULL, NULL, '', 1, ?, ?)`,
+  ).run('model-a', 'model', 'https://example.test/v1', encrypted.cipher, encrypted.nonce, encrypted.tag, now, now)
   const sessions = new SessionStore({ db })
   const qqRules = createQQRuleRepository(db)
   const service = createAgentService({ db, audit: createAuditStore(db) })
@@ -126,7 +125,7 @@ test('only an owner can see QR status and change the logged-in account agent', a
   const agent = service.create({ name: '切换到此 Agent' })
   service.updateDraft({
     agentId: agent.id,
-    draft: { name: '切换到此 Agent', prompt: '测试', model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model' } },
+    draft: { name: '切换到此 Agent', prompt: '测试', model: { modelId: 'model-a', name: 'test-model' } },
     expectedRevision: 1,
     actorId: 'owner-1',
   })

@@ -20,7 +20,7 @@ import QQPage from './pages/QQPage'
 import ConversationsPage from './pages/ConversationsPage'
 import CommandsPage from './pages/CommandsPage'
 import ToolsPage from './pages/ToolsPage'
-import CredentialsPage from './pages/CredentialsPage'
+import ModelsPage from './pages/ModelsPage'
 import AuditPage from './pages/AuditPage'
 
 function useAuth() {
@@ -54,7 +54,7 @@ function Shell() {
     { key: '/conversations', icon: <HistoryOutlined />, label: <Link to='/conversations'>会话记录</Link> },
     { key: '/commands', icon: <MessageOutlined />, label: <Link to='/commands'>命令模板</Link> },
     { key: '/tools', icon: <FileSearchOutlined />, label: <Link to='/tools'>工具与资源</Link> },
-    { key: '/credentials', icon: <KeyOutlined />, label: <Link to='/credentials'>模型与凭据</Link> },
+    { key: '/models', icon: <KeyOutlined />, label: <Link to='/models'>模型</Link> },
     { key: '/audit', icon: <AuditOutlined />, label: <Link to='/audit'>审计</Link> },
   ]
   const selected = items.find((item) => location.pathname.startsWith(item.key))
@@ -75,7 +75,7 @@ function Shell() {
             <Route path='/conversations' element={<ConversationsPage />} />
             <Route path='/commands' element={<CommandsPage />} />
             <Route path='/tools' element={<ToolsPage />} />
-            <Route path='/credentials' element={<CredentialsPage />} />
+            <Route path='/models' element={<ModelsPage />} />
             <Route path='/audit' element={<AuditPage />} />
             <Route path='*' element={<Navigate to='/agents' replace />} />
           </Routes>

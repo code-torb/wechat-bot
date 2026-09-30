@@ -26,17 +26,13 @@ function fixture(t) {
   const db = openDatabase({ filename: join(dir, 't.sqlite') })
   t.after(() => db.close())
   const now = Date.now()
-  db.prepare(
-    'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)',
-  ).run('provider-a', 'test', 'https://model.example.test/v1', '{}', now, now)
   const secretStore = new SecretStore({ key: Buffer.alloc(32, 5) })
-  const envelope = secretStore.encrypt({
-    record: { id: 'cred-a', provider_id: 'provider-a', purpose: 'model', key_version: 1 },
-    plaintext: 'key',
-  })
+  const envelope = secretStore.encrypt({ record: { id: 'model-a', aad_kind: 'model', key_version: 1 }, plaintext: 'key' })
   db.prepare(
-    'INSERT INTO credentials (id, provider_id, purpose, cipher, nonce, tag, key_version, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-  ).run('cred-a', 'provider-a', 'model', envelope.cipher, envelope.nonce, envelope.tag, 1, now, now)
+    `INSERT INTO models (id, name, base_url, aad_kind, api_key_cipher, api_key_nonce, api_key_tag, key_version,
+       search_key_cipher, search_key_nonce, search_key_tag, search_key_version, embedding_model, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, 'model', ?, ?, ?, 1, NULL, NULL, NULL, NULL, '', 1, ?, ?)`,
+  ).run('model-a', 'test-provider', 'https://model.example.test/v1', envelope.cipher, envelope.nonce, envelope.tag, now, now)
   const audit = createAuditStore(db)
   const service = createAgentService({ db, audit })
   const agent = service.create({ name: '助手' })
@@ -45,7 +41,7 @@ function fixture(t) {
     draft: {
       name: '助手',
       prompt: '你是一个测试助手。',
-      model: { providerId: 'provider-a', credentialRef: 'cred-a', name: 'test-model', supportsTools: false },
+      model: { modelId: 'model-a', name: 'test-model', supportsTools: false },
       pacing: { baseDelayMs: 100, charsPerSecond: 0, maxDelayMs: 300 },
     },
     expectedRevision: 1,
@@ -132,7 +128,7 @@ test('runtime passes the published Agent model name to the model client', async 
       return { text: '模型回复', toolCalls: [] }
     },
     tools: { execute: async () => ({ status: 'denied' }) },
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
     sessionQueue: {
       enqueue(_key, task) {
         queuedTask = task
@@ -188,8 +184,7 @@ test('QQ message reaches the model client and sends its reply with token usage',
         },
       }),
     tools: { execute: async () => ({ status: 'denied' }) },
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
     sessionQueue: createSessionQueue(),
   })
   const result = await runtime.accept({
@@ -271,14 +266,14 @@ test('model-task commands call the same configured model as ordinary chat', asyn
         scheduled = plan
       },
     },
-    complete: async ({ provider, messages }) => {
-      assert.equal(provider.modelName, 'test-model')
+    complete: async ({ model, modelName, messages }) => {
+      assert.equal(modelName, 'test-model')
+      assert.equal(model.id, 'model-a')
       assert.equal(messages.at(-1).content, '解释 你好')
       return { text: '模型任务回复', toolCalls: [] }
     },
     tools: { execute: async () => ({ status: 'denied' }) },
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
     sessionQueue: {
       enqueue(_key, task) {
         queuedTask = task
@@ -525,8 +520,7 @@ test('stale relations refresh automatically before a normal turn', async (t) => 
     service,
     audit: createAuditStore(db),
     complete: async () => ({ text: '生成的关系文档', toolCalls: [] }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   const now = Date.now()
   db.prepare(
@@ -580,8 +574,7 @@ test('/refresh manually refreshes all relations and replies', async (t) => {
     service,
     audit: createAuditStore(db),
     complete: async () => ({ text: '生成的关系文档', toolCalls: [] }),
-    getCredential: (id) => db.prepare('SELECT * FROM credentials WHERE id = ?').get(id),
-    getProvider: (id) => db.prepare('SELECT * FROM providers WHERE id = ?').get(id),
+    getModel: (id) => db.prepare('SELECT * FROM models WHERE id = ?').get(id),
   })
   const now = Date.now()
   db.prepare(

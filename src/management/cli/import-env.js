@@ -42,8 +42,7 @@ export async function importLegacyConfig({ db, envFile, secretKeyPath, dryRun = 
     return { imported: false, reason: 'same source already imported' }
   }
   const summary = {
-    providers: 1,
-    credentials: 1,
+    models: 1,
     agents: 1,
     botAccounts: 1,
     groupRules: (env.ONEBOT_GROUP_ALLOWLIST || '').split(',').filter(Boolean).length,
@@ -60,18 +59,41 @@ export async function importLegacyConfig({ db, envFile, secretKeyPath, dryRun = 
 
   db.transaction(() => {
     const baseUrl = validateProviderBaseUrl(env.CHAT_BASE_URL || 'https://api.openai.com/v1')
-    const providerId = 'imported-provider'
+    const modelId = 'imported-model'
+    const now = Date.now()
+    const modelRecord = {
+      id: modelId,
+      name: 'imported',
+      base_url: baseUrl,
+      embedding_model: '',
+      enabled: 1,
+      key_version: secretStore.keyVersion,
+      aad_kind: 'model',
+      created_at: now,
+      updated_at: now,
+    }
+    const envelope = secretStore.encrypt({ record: modelRecord, plaintext: env.CHAT_API_KEY || '' })
     db.prepare(
-      'INSERT INTO providers (id, name, base_url, capability_json, enabled, revision, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 1, ?, ?)',
-    ).run(providerId, 'imported', baseUrl, JSON.stringify(['chat']), Date.now(), Date.now())
-    const credentialId = 'imported-credential'
-    const envelope = secretStore.encrypt({
-      record: { id: credentialId, provider_id: providerId, purpose: 'model', key_version: 1 },
-      plaintext: env.CHAT_API_KEY || '',
-    })
-    db.prepare(
-      'INSERT INTO credentials (id, provider_id, purpose, cipher, nonce, tag, key_version, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)',
-    ).run(credentialId, providerId, 'model', envelope.cipher, envelope.nonce, envelope.tag, 1, Date.now(), Date.now())
+      `INSERT INTO models (id, name, base_url, aad_kind, api_key_cipher, api_key_nonce, api_key_tag, key_version,
+         search_key_cipher, search_key_nonce, search_key_tag, search_key_version, embedding_model, enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    ).run(
+      modelId,
+      modelRecord.name,
+      baseUrl,
+      'model',
+      envelope.cipher,
+      envelope.nonce,
+      envelope.tag,
+      envelope.keyVersion,
+      null,
+      null,
+      null,
+      null,
+      '',
+      now,
+      now,
+    )
 
     const agent = service.create({ name: '默认 Agent', description: '由旧配置导入' })
     service.updateDraft({
@@ -79,7 +101,7 @@ export async function importLegacyConfig({ db, envFile, secretKeyPath, dryRun = 
       draft: {
         name: '默认 Agent',
         prompt: DEFAULT_ROLE_BACKGROUND,
-        model: { providerId, credentialRef: credentialId, name: env.CHAT_MODEL || '', supportsTools: false },
+        model: { modelId, name: env.CHAT_MODEL || '', supportsTools: false },
         pacing: {
           baseDelayMs: Number(env.CHAT_REPLY_DELAY_MS || 0),
           charsPerSecond: Number(env.CHAT_REPLY_CHARS_PER_SECOND || 0),

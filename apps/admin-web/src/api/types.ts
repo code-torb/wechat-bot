@@ -14,7 +14,7 @@ export type Agent = {
       occupation: string
       hobbies: string
     }
-    model: { providerId: string; credentialRef: string; name: string; supportsTools: boolean }
+    model: { modelId: string; name: string; supportsTools: boolean }
     styleValues: { definitionId: string; definitionVersionId: string; value: number }[]
     pacing: { baseDelayMs: number; charsPerSecond: number; maxDelayMs: number } | null
     capabilities: string[]
@@ -145,15 +145,16 @@ export type CommandDefinition = {
   capabilities: string[]
 }
 
-export type Credential = {
+export type Model = {
   id: string
-  providerId: string
-  purpose: 'model' | 'search'
+  name: string
+  baseUrl: string
+  embeddingModel: string
+  hasSearchKey: boolean
   enabled: boolean
+  keyVersion: number
   updatedAt: number
 }
-
-export type Provider = { id: string; name: string; baseUrl: string; embeddingModel: string; capabilities: string[]; enabled: boolean }
 
 export type MemeAsset = { id: string; mime: string; bytes: number; tags: string[]; enabled: boolean; createdAt: number }
 

@@ -32,3 +32,11 @@ export function validateProviderBaseUrl(baseUrl) {
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('provider base URL must not contain credentials or query')
   return parsed.origin + parsed.pathname.replace(/\/+$/, '')
 }
+
+export function validateModelBaseUrl(baseUrl) {
+  try {
+    return validateProviderBaseUrl(baseUrl)
+  } catch (error) {
+    throw new Error(String(error.message).replace('provider', 'model'))
+  }
+}

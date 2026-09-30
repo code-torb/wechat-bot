@@ -1,22 +1,22 @@
 import OpenAI from 'openai'
 
 export function createModelClient({ secretStore }) {
-  return async function complete({ provider, credentialRow, messages, tools, signal, transport }) {
-    if (!credentialRow) throw new Error('model credential is required')
-    const apiKey = secretStore.withSecret(credentialRow, (value) => value)
+  return async function complete({ model, modelName, messages, tools, signal, transport }) {
+    if (!model) throw new Error('model is required')
+    const apiKey = secretStore.withSecret(model, (value) => value)
     const client = new OpenAI({
       apiKey: apiKey || 'unset',
-      baseURL: provider.base_url,
+      baseURL: model.base_url,
       maxRetries: 0,
-      timeout: provider.timeoutMs || 45000,
+      timeout: 45000,
       fetch: transport,
     })
     const response = await client.chat.completions.create(
       {
-        model: provider.modelName,
+        model: modelName,
         messages,
         ...(tools && tools.length ? { tools, tool_choice: 'auto' } : {}),
-        max_tokens: provider.maxTokens || 1000,
+        max_tokens: 1000,
       },
       { signal },
     )

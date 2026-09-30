@@ -51,8 +51,8 @@ test('legacy import is idempotent and preserves allowlists with L0 defaults', as
   assert.deepEqual(privateRules, ['23456'])
   const grants = db.prepare('SELECT COUNT(*) AS count FROM principal_grants').get().count
   assert.equal(grants, 0)
-  const credential = db.prepare('SELECT cipher, nonce FROM credentials WHERE purpose = ?').get('model')
-  assert.equal(JSON.stringify(credential).includes('fixture-key'), false)
+  const model = db.prepare('SELECT api_key_cipher, api_key_nonce FROM models WHERE id = ?').get('imported-model')
+  assert.equal(JSON.stringify(model).includes('fixture-key'), false)
   const published = db.prepare('SELECT snapshot_json FROM agent_versions WHERE version = 1').get()
   assert.equal(JSON.parse(published.snapshot_json).prompt, DEFAULT_ROLE_BACKGROUND)
   assert.deepEqual(JSON.parse(published.snapshot_json).styleValues, [])
@@ -68,10 +68,10 @@ test('upgrades only untouched generic imported roles, preserving customized back
     JSON.stringify({ ...JSON.parse(row.draft_json), prompt: '你是一个友好、简洁的中文聊天助手。请用纯文本回答，避免过长的回复。' }),
     row.id,
   )
-  db.prepare('UPDATE credentials SET enabled = 0 WHERE purpose = ?').run('model')
+  db.prepare('UPDATE models SET enabled = 0 WHERE id = ?').run('imported-model')
   assert.equal(upgradeUntouchedDefaultRole({ db, service, logger: { warn() {} } }), 0)
   assert.equal(service.get(row.id).revision, 3)
-  db.prepare('UPDATE credentials SET enabled = 1 WHERE purpose = ?').run('model')
+  db.prepare('UPDATE models SET enabled = 1 WHERE id = ?').run('imported-model')
   assert.equal(upgradeUntouchedDefaultRole({ db, service }), 1)
   assert.equal(service.getPublished(row.id).prompt, DEFAULT_ROLE_BACKGROUND)
   assert.equal(service.versions(row.id).length, 2)

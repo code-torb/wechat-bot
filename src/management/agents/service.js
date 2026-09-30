@@ -8,7 +8,7 @@ function defaultDraft() {
     description: '',
     prompt: '',
     attributes: { name: '', birthDate: '', gender: '', occupation: '', hobbies: '' },
-    model: { providerId: '', credentialRef: '', name: '', supportsTools: false },
+    model: { modelId: '', name: '', supportsTools: false },
     styleValues: [],
     pacing: null,
     capabilities: [],
@@ -35,11 +35,9 @@ function normalizeDraft(input, { requireComplete = false } = {}) {
   const draft = { ...base, ...(input || {}) }
   if (typeof draft.name !== 'string' || !draft.name.trim()) throw new ValidationError('agent name is required')
   if (typeof draft.prompt !== 'string' || (requireComplete && !draft.prompt.trim())) throw new ValidationError('agent prompt is required')
-  if (!draft.model || typeof draft.model.providerId !== 'string' || (requireComplete && !draft.model.providerId)) {
-    throw new ValidationError('agent model provider is required')
+  if (!draft.model || typeof draft.model.modelId !== 'string' || (requireComplete && !draft.model.modelId)) {
+    throw new ValidationError('agent model is required')
   }
-  if (typeof draft.model.credentialRef !== 'string' || (requireComplete && !draft.model.credentialRef))
-    throw new ValidationError('agent model credential is required')
   if (typeof draft.model.name !== 'string' || (requireComplete && !draft.model.name)) throw new ValidationError('agent model name is required')
   if (!Array.isArray(draft.styleValues)) throw new ValidationError('styleValues must be an array')
   if (!Array.isArray(draft.capabilities)) throw new ValidationError('capabilities must be an array')
@@ -49,8 +47,7 @@ function normalizeDraft(input, { requireComplete = false } = {}) {
     prompt: draft.prompt,
     attributes: sanitizeAttributes(draft.attributes),
     model: {
-      providerId: draft.model.providerId,
-      credentialRef: draft.model.credentialRef,
+      modelId: draft.model.modelId,
       name: draft.model.name,
       supportsTools: Boolean(draft.model.supportsTools),
     },
@@ -67,10 +64,8 @@ export function createAgentService({ db, audit }) {
   const repo = createAgentRepository(db)
 
   function validateModelRefs(draft) {
-    const credential = db.prepare('SELECT id FROM credentials WHERE id = ? AND purpose = ? AND enabled = 1').get(draft.model.credentialRef, 'model')
-    if (!credential) throw new ValidationError('model credential is missing, disabled or not a model credential')
-    const provider = db.prepare('SELECT id FROM providers WHERE id = ? AND enabled = 1').get(draft.model.providerId)
-    if (!provider) throw new ValidationError('model provider is missing or disabled')
+    const model = db.prepare('SELECT id FROM models WHERE id = ? AND enabled = 1').get(draft.model.modelId)
+    if (!model) throw new ValidationError('model is missing or disabled')
   }
 
   function validateStyleRefs(styleValues) {
