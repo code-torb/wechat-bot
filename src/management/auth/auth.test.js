@@ -85,6 +85,55 @@ test('login succeeds and me returns the session identity', async (t) => {
   assert.equal(me.json().data.role, 'owner')
 })
 
+test('a refreshed page receives a usable csrf token and accepts its own origin with a port', async (t) => {
+  const f = fixture(t)
+  const app = await buildApp(f)
+  t.after(() => app.close())
+  await setPassword(app, 'owner', 'pw')
+  const loginResponse = await login(app)
+  const cookie = sessionCookie(loginResponse)
+  const me = await app.inject({ method: 'GET', url: '/api/v1/auth/me', cookies: { [SESSION_COOKIE]: cookie } })
+  assert.equal(typeof me.json().data.csrf, 'string')
+  const otherTab = await app.inject({ method: 'GET', url: '/api/v1/auth/me', cookies: { [SESSION_COOKIE]: cookie } })
+  assert.equal(otherTab.json().data.csrf, me.json().data.csrf)
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/v1/credentials',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: {
+      host: '127.0.0.1:6080',
+      origin: 'http://127.0.0.1:6080',
+      'x-csrf-token': me.json().data.csrf,
+    },
+    payload: { providerId: 'provider-a', purpose: 'model', value: 'fixture-secret-value' },
+  })
+  assert.equal(created.statusCode, 201)
+  const devProxy = await app.inject({
+    method: 'POST',
+    url: '/api/v1/credentials',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: {
+      host: '127.0.0.1:5173',
+      origin: 'http://127.0.0.1:5173',
+      'x-csrf-token': me.json().data.csrf,
+    },
+    payload: { providerId: 'provider-a', purpose: 'search', value: 'fixture-search-secret' },
+  })
+  assert.equal(devProxy.statusCode, 201)
+  const foreignOrigin = await app.inject({
+    method: 'POST',
+    url: '/api/v1/credentials',
+    cookies: { [SESSION_COOKIE]: cookie },
+    headers: {
+      host: '127.0.0.1:5173',
+      origin: 'http://localhost:5173',
+      'x-csrf-token': me.json().data.csrf,
+    },
+    payload: { providerId: 'provider-a', purpose: 'search', value: 'must-not-write' },
+  })
+  assert.equal(foreignOrigin.statusCode, 403)
+})
+
 test('invalid password and revoked session are rejected', async (t) => {
   const f = fixture(t)
   const app = await buildApp(f)

@@ -17,9 +17,15 @@ import AuditPage from './pages/AuditPage'
 function useAuth() {
   const [user, setUser] = useState<null | { username: string; role: string } | 'loading'>('loading')
   useEffect(() => {
-    api<{ username: string; role: string }>('/api/v1/auth/me')
-      .then((result) => setUser(result.data))
-      .catch(() => setUser(null))
+    api<{ username: string; role: string; csrf: string }>('/api/v1/auth/me')
+      .then((result) => {
+        setCsrf(result.data.csrf)
+        setUser(result.data)
+      })
+      .catch(() => {
+        setCsrf('')
+        setUser(null)
+      })
   }, [])
   return { user, setUser }
 }

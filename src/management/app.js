@@ -32,7 +32,14 @@ export async function createApp({ db, clock = Date.now, sessions, logger = true 
     const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
     if (!unsafe) return
     const csrf = request.headers['x-csrf-token']
-    const sameOrigin = !request.headers.origin || new URL(request.headers.origin).host === request.hostname
+    let sameOrigin = !request.headers.origin
+    if (request.headers.origin) {
+      try {
+        sameOrigin = new URL(request.headers.origin).host === request.headers.host
+      } catch {
+        sameOrigin = false
+      }
+    }
     if (!sameOrigin || !sessions.checkCsrf(request.auth.session, csrf)) {
       return reply.code(403).send({ error: { code: 'CSRF_REJECTED', message: 'invalid csrf token or origin' } })
     }

@@ -67,6 +67,19 @@ export type AccessRule = {
 
 export type Binding = { id: string; scope_type: string; scope_key: string; agent_id: string }
 
+export type QQAccount = { id: string; selfId: string; enabled: boolean; defaultAgentId: string | null }
+
+export type QQLoginStatus = {
+  isLogin: boolean
+  isOffline: boolean
+  loginPhase: string
+  loginError: string
+  qrcodeUrl: string
+  selfId: string
+  accountId: string | null
+  oneBotReady: boolean
+}
+
 export type CommandDefinition = {
   id: string
   name: string

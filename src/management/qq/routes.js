@@ -15,13 +15,73 @@ function serializeRule(row) {
   }
 }
 
-export function registerQQRoutes(app, { qqRules, qqRouter }) {
+export function registerQQRoutes(app, { qqRules, qqRouter, service, napcatWebUi, getOneBotClient, ensureBotAccount }) {
   app.register(async (scope) => {
     scope.addHook('preHandler', async (request, reply) => {
       const user = request.auth?.user
       if (!user) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } })
       if (user.role !== 'owner') return reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'owner role required' } })
     })
+
+    scope.get('/api/v1/qq/accounts', async () => ({
+      data: qqRules.accounts().map((row) => ({
+        id: row.id,
+        selfId: row.self_id,
+        enabled: Boolean(row.enabled),
+        defaultAgentId: row.default_agent_id,
+      })),
+    }))
+
+    scope.patch(
+      '/api/v1/qq/accounts/:id',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            required: ['defaultAgentId'],
+            additionalProperties: false,
+            properties: { defaultAgentId: { type: ['string', 'null'] } },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!qqRules.account(request.params.id)) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'account not found' } })
+        const agentId = request.body.defaultAgentId
+        if (agentId && (service.get(agentId)?.status !== 'active' || !service.getPublished(agentId))) {
+          return reply.code(422).send({ error: { code: 'VALIDATION', message: '请先发布并启用选定的 Agent' } })
+        }
+        const account = qqRules.setDefaultAgent(request.params.id, agentId)
+        return { data: { id: account.id, selfId: account.self_id, enabled: Boolean(account.enabled), defaultAgentId: account.default_agent_id } }
+      },
+    )
+
+    scope.get('/api/v1/qq/login', async () => {
+      const status = await napcatWebUi.status()
+      const identity = getOneBotClient?.()?.identity
+      const selfId = status.isLogin ? status.selfId || identity?.selfId || '' : ''
+      const accountId = status.isLogin && selfId ? ensureBotAccount(selfId) : null
+      const oneBotReady = Boolean(status.isLogin && !status.isOffline && identity && identity.selfId === selfId)
+      return { data: { ...status, selfId, accountId, oneBotReady } }
+    })
+
+    scope.post('/api/v1/qq/login/refresh', async () => ({ data: await napcatWebUi.refresh() }))
+    scope.post(
+      '/api/v1/qq/login/verify',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            required: ['totpCode'],
+            additionalProperties: false,
+            properties: { totpCode: { type: 'string', pattern: '^[0-9]{6}$' } },
+          },
+        },
+      },
+      async (request) => {
+        await napcatWebUi.verify(request.body.totpCode)
+        return { data: { verified: true } }
+      },
+    )
 
     scope.post(
       '/api/v1/qq/accounts',
@@ -195,7 +255,7 @@ export function registerQQRoutes(app, { qqRules, qqRouter }) {
           mentionedSelf: Boolean(request.body.mentionedSelf),
           privateSubtype: request.body.privateSubtype || 'friend',
         })
-        return { data: { accepted: result.accepted, reason: result.reason, agentId: result.agentId || null, maxLevel: result.maxLevel || null } }
+        return { data: { accepted: result.accepted, reason: result.reason, agentId: result.agentId || null, maxLevel: result.maxLevel ?? null } }
       },
     )
   })

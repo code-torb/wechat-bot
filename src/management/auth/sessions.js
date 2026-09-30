@@ -1,7 +1,11 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex')
+}
+
+function sessionCsrf(session) {
+  return createHmac('sha256', session.token_hash).update('management:csrf').digest('base64url')
 }
 
 export class SessionStore {
@@ -13,12 +17,13 @@ export class SessionStore {
 
   create(userId) {
     const token = randomBytes(32).toString('base64url')
-    const csrf = randomBytes(24).toString('base64url')
+    const tokenHash = hashToken(token)
+    const csrf = sessionCsrf({ token_hash: tokenHash })
     const id = randomBytes(16).toString('hex')
     const now = this.now()
     this.db
       .prepare('INSERT INTO admin_sessions (id, token_hash, user_id, csrf_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, hashToken(token), userId, createHash('sha256').update(csrf).digest('hex'), now + this.ttlMs, now)
+      .run(id, tokenHash, userId, createHash('sha256').update(csrf).digest('hex'), now + this.ttlMs, now)
     return { token, csrf, expiresAt: now + this.ttlMs }
   }
 
@@ -32,7 +37,11 @@ export class SessionStore {
   checkCsrf(session, csrfToken) {
     if (!csrfToken) return false
     const expected = createHash('sha256').update(csrfToken).digest('hex')
-    return expected === session.csrf_hash
+    return expected === session.csrf_hash || csrfToken === sessionCsrf(session)
+  }
+
+  csrfFor(session) {
+    return sessionCsrf(session)
   }
 
   revoke(token) {

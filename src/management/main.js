@@ -1,4 +1,5 @@
 import { openDatabase } from './db/index.js'
+import { randomUUID } from 'node:crypto'
 import { createApp } from './app.js'
 import { SessionStore } from './auth/sessions.js'
 import { SecretStore } from './secrets/store.js'
@@ -7,6 +8,7 @@ import { createAuditStore } from './audit/store.js'
 import { createStyleRepository } from './styles/repository.js'
 import { createQQRuleRepository } from './qq/rules.js'
 import { createQQRouter } from './qq/router.js'
+import { createNapCatWebUi } from './qq/napcat-webui.js'
 import { createConversationStore } from './conversations/repository.js'
 import { createGrantRepository } from './permissions/grants.js'
 import { registerManagementRoutes } from './routes.js'
@@ -40,6 +42,20 @@ const service = createAgentService({ db, audit })
 const styles = createStyleRepository(db)
 const qqRules = createQQRuleRepository(db)
 const qqRouter = createQQRouter({ db, service })
+const napcatWebUi = createNapCatWebUi({
+  baseUrl: process.env.NAPCAT_WEBUI_URL || 'http://napcat:6099',
+  tokenFile: process.env.NAPCAT_WEBUI_TOKEN_FILE || '',
+  token: process.env.NAPCAT_WEBUI_SECRET_KEY || '',
+})
+function ensureBotAccount(selfId) {
+  if (!/^\d+$/.test(selfId)) return null
+  const existing = qqRules.accountBySelf('qq-onebot', selfId)
+  if (existing) return existing.id
+  const preferredId = process.env.ONEBOT_BOT_ACCOUNT_ID || ''
+  const id = preferredId && !qqRules.account(preferredId) ? preferredId : randomUUID()
+  qqRules.upsertAccount({ id, platform: 'qq-onebot', selfId })
+  return id
+}
 const conversations = createConversationStore(db)
 const grants = createGrantRepository(db)
 const policyEngine = createPolicyEngine({ db })
@@ -55,17 +71,30 @@ const getCredential = (credentialRef) => db.prepare('SELECT * FROM credentials W
 const getProvider = (providerId) => db.prepare('SELECT * FROM providers WHERE id = ?').get(providerId)
 const modelClient = secretStore ? createModelClient({ secretStore }) : null
 const app = await createApp({ db, sessions })
-registerManagementRoutes(app, { db, sessions, secretStore, service, audit, styles, qqRules, qqRouter, conversations, grants })
-
 let scheduler = null
 let consumer = null
 let lease = null
+registerManagementRoutes(app, {
+  db,
+  sessions,
+  secretStore,
+  service,
+  audit,
+  styles,
+  qqRules,
+  qqRouter,
+  napcatWebUi,
+  ensureBotAccount,
+  getOneBotClient: () => consumer?.client,
+  conversations,
+  grants,
+})
 if (process.env.ONEBOT_ACCESS_TOKEN && modelClient && secretStore) {
   lease = await acquireOneBotConsumerLease({ directory: process.env.MANAGEMENT_LEASE_DIR || 'data/lease' })
   const client = createOneBotClient({
     url: process.env.ONEBOT_WS_URL || 'ws://127.0.0.1:3001',
     accessToken: process.env.ONEBOT_ACCESS_TOKEN,
-    expectedSelfId: process.env.ONEBOT_SELF_ID || '',
+    expectedSelfId: '',
   })
   const plans = createReplyPlanStore(db)
   scheduler = createReplyScheduler({
@@ -92,7 +121,13 @@ if (process.env.ONEBOT_ACCESS_TOKEN && modelClient && secretStore) {
     getProvider,
     sessionQueue: createSessionQueue(),
   })
-  consumer = createOneBotConsumer({ client, botAccountId: process.env.ONEBOT_BOT_ACCOUNT_ID || '', runtime })
+  client.on('ready', ({ selfId }) => ensureBotAccount(selfId))
+  consumer = createOneBotConsumer({
+    client,
+    botAccountId: process.env.ONEBOT_BOT_ACCOUNT_ID || '',
+    resolveBotAccountId: ensureBotAccount,
+    runtime,
+  })
   consumer.client = client
   scheduler.start()
   client.start()

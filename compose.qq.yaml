@@ -70,6 +70,7 @@ services:
     volumes:
       - management-data:/app/data
       - ./prompts:/app/prompts:ro
+      - napcat-config:/run/napcat-config:ro
     environment:
       MANAGEMENT_HOST: 0.0.0.0
       MANAGEMENT_PORT: '6080'
@@ -81,6 +82,9 @@ services:
       ONEBOT_ACCESS_TOKEN: '${ONEBOT_ACCESS_TOKEN:-}'
       ONEBOT_SELF_ID: '${ONEBOT_SELF_ID:-}'
       ONEBOT_BOT_ACCOUNT_ID: '${ONEBOT_BOT_ACCOUNT_ID:-imported-bot}'
+      NAPCAT_WEBUI_URL: http://napcat:6099
+      NAPCAT_WEBUI_TOKEN_FILE: /run/napcat-config/webui.json
+      NAPCAT_WEBUI_SECRET_KEY: '${NAPCAT_WEBUI_SECRET_KEY:-}'
       FILE_EXECUTOR_SOCKET: /run/executor.sock
       FILE_EXECUTOR_SECRET: '${FILE_EXECUTOR_SECRET:-}'
     secrets:

@@ -12,3 +12,22 @@ body {
 .muted {
   color: rgba(0, 0, 0, 0.45);
 }
+
+.qq-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
+  gap: 24px;
+  border-block: 1px solid #e5e7e7;
+  padding: 18px 0;
+}
+.qq-layout h3, .qq-settings-section h3 { margin: 0 0 16px; font-size: 16px; }
+.qq-section-title { display: flex; align-items: start; justify-content: space-between; }
+.qq-qr-state, .qq-login-state { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.qq-qr { background: white; padding: 12px; border: 1px solid #e5e7e7; border-radius: 4px; }
+.qq-account-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.qq-account-fields label { display: grid; gap: 8px; }
+.qq-settings-section { padding: 20px 0; border-bottom: 1px solid #e5e7e7; }
+.qq-form { margin-top: 16px; row-gap: 8px; }
+@media (max-width: 760px) {
+  .qq-layout, .qq-account-fields { grid-template-columns: minmax(0, 1fr); }
+}

@@ -6,6 +6,13 @@ export function createQQRuleRepository(db) {
     accountBySelf(platform, selfId) {
       return db.prepare('SELECT * FROM bot_accounts WHERE platform = ? AND self_id = ?').get(platform, selfId)
     },
+    accounts() {
+      return db.prepare("SELECT * FROM bot_accounts WHERE platform = 'qq-onebot' ORDER BY updated_at DESC").all()
+    },
+    setDefaultAgent(accountId, agentId) {
+      db.prepare('UPDATE bot_accounts SET default_agent_id = ?, updated_at = ? WHERE id = ?').run(agentId, Date.now(), accountId)
+      return this.account(accountId)
+    },
     upsertAccount({ id, platform, selfId, defaultAgentId = null }) {
       const now = Date.now()
       db.prepare(

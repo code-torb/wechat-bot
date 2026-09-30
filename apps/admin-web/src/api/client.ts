@@ -2,6 +2,16 @@ export type ApiResult<T> = { data: T; meta?: { nextCursor?: string | null } }
 
 let csrfToken = ''
 
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status: number,
+  ) {
+    super(message)
+  }
+}
+
 export function setCsrf(token: string) {
   csrfToken = token
 }
@@ -25,7 +35,7 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<Ap
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(payload?.error?.message || `request failed (${response.status})`)
+    throw new ApiError(payload?.error?.code || 'REQUEST_FAILED', payload?.error?.message || `request failed (${response.status})`, response.status)
   }
   return payload as ApiResult<T>
 }

@@ -66,6 +66,13 @@ export function registerAuthRoutes(app, { db, sessions, now = Date.now }) {
 
   app.get('/api/v1/auth/me', async (request, reply) => {
     if (!request.auth?.user) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'login required' } })
-    return { data: { username: request.auth.user.username, role: request.auth.user.role, scopes: request.auth.user.scopes } }
+    return {
+      data: {
+        username: request.auth.user.username,
+        role: request.auth.user.role,
+        scopes: request.auth.user.scopes,
+        csrf: sessions.csrfFor(request.auth.session),
+      },
+    }
   })
 }
